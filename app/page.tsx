@@ -6,10 +6,13 @@ import { NotesPanel } from "@/components/notes-panel"
 import { FileText, PanelRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
+type TaskType = "summary" | "explanation"
+
 interface Note {
   id: string
   sourceText: string
   summary: string
+  taskType: TaskType
   createdAt: Date
 }
 
@@ -18,11 +21,12 @@ export default function Home() {
   const [highlightedText, setHighlightedText] = useState<string | null>(null)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
 
-  const handleHighlight = useCallback((text: string) => {
+  const handleHighlight = useCallback((text: string, taskType: TaskType) => {
     const newNote: Note = {
       id: crypto.randomUUID(),
       sourceText: text,
       summary: "",
+      taskType,
       createdAt: new Date(),
     }
     

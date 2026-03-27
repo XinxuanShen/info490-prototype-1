@@ -1,10 +1,18 @@
 "use client"
 
-import { useCallback, useRef, useEffect } from "react"
+import { useCallback, useRef, useEffect, useState } from "react"
+import { FileText, Lightbulb } from "lucide-react"
+
+type TaskType = "summary" | "explanation"
 
 interface ArticlePanelProps {
-  onHighlight: (text: string) => void
+  onHighlight: (text: string, taskType: TaskType) => void
   highlightedText: string | null
+}
+
+interface ToolbarPosition {
+  x: number
+  y: number
 }
 
 const articleContent = [
@@ -52,22 +60,65 @@ const articleContent = [
 
 export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
-  const highlightRef = useRef<HTMLSpanElement>(null)
+  const [selectedText, setSelectedText] = useState<string | null>(null)
+  const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
 
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection()
-    if (!selection || selection.isCollapsed) return
+    if (!selection || selection.isCollapsed) {
+      setSelectedText(null)
+      setToolbarPosition(null)
+      return
+    }
 
-    const selectedText = selection.toString().trim()
-    if (selectedText.length < 5) return
+    const text = selection.toString().trim()
+    if (text.length < 5) {
+      setSelectedText(null)
+      setToolbarPosition(null)
+      return
+    }
 
     // Check if selection is within the article
     const range = selection.getRangeAt(0)
     if (articleRef.current?.contains(range.commonAncestorContainer)) {
-      onHighlight(selectedText)
-      selection.removeAllRanges()
+      const rect = range.getBoundingClientRect()
+      const articleRect = articleRef.current.getBoundingClientRect()
+      
+      setSelectedText(text)
+      setToolbarPosition({
+        x: rect.left + rect.width / 2 - articleRect.left,
+        y: rect.top - articleRect.top + articleRef.current.scrollTop - 10
+      })
     }
-  }, [onHighlight])
+  }, [])
+
+  const handleTaskSelect = useCallback((taskType: TaskType) => {
+    if (selectedText) {
+      onHighlight(selectedText, taskType)
+      setSelectedText(null)
+      setToolbarPosition(null)
+      window.getSelection()?.removeAllRanges()
+    }
+  }, [selectedText, onHighlight])
+
+  // Close toolbar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest(".selection-toolbar")) {
+        // Small delay to allow button click to process
+        setTimeout(() => {
+          if (!window.getSelection()?.toString().trim()) {
+            setSelectedText(null)
+            setToolbarPosition(null)
+          }
+        }, 100)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   // Find and highlight text when highlightedText changes
   useEffect(() => {
@@ -121,9 +172,42 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
   return (
     <div 
       ref={articleRef}
-      className="h-full overflow-y-auto px-8 py-12 md:px-16 lg:px-24"
+      className="h-full overflow-y-auto px-8 py-12 md:px-16 lg:px-24 relative"
       onMouseUp={handleMouseUp}
     >
+      {/* Selection Toolbar */}
+      {selectedText && toolbarPosition && (
+        <div 
+          className="selection-toolbar absolute z-50 transform -translate-x-1/2 -translate-y-full"
+          style={{ 
+            left: toolbarPosition.x, 
+            top: toolbarPosition.y 
+          }}
+        >
+          <div className="bg-foreground text-background rounded-lg shadow-lg flex overflow-hidden">
+            <button
+              onClick={() => handleTaskSelect("summary")}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-background/10 transition-colors"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Summary
+            </button>
+            <div className="w-px bg-background/20" />
+            <button
+              onClick={() => handleTaskSelect("explanation")}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-background/10 transition-colors"
+            >
+              <Lightbulb className="h-3.5 w-3.5" />
+              Explanation
+            </button>
+          </div>
+          {/* Arrow */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-full">
+            <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-foreground" />
+          </div>
+        </div>
+      )}
+
       <article className="max-w-2xl mx-auto">
         {articleContent.map((block, index) => {
           if (block.type === "heading") {

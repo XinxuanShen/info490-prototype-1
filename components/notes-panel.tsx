@@ -3,13 +3,15 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { FileText, Sparkles, ExternalLink, Trash2, X } from "lucide-react"
+import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb } from "lucide-react"
+
+type TaskType = "summary" | "explanation"
 
 interface Note {
   id: string
   sourceText: string
   summary: string
-  range: Range
+  taskType: TaskType
   createdAt: Date
 }
 
@@ -20,14 +22,18 @@ interface NotesPanelProps {
   onDeleteNotes: (noteIds: string[]) => void
 }
 
-const fakeSummaries = [
-  "This passage discusses the importance of focused concentration in professional work, suggesting it creates value and improves skills in ways that are difficult to replicate.",
-  "The key insight here relates to how deep work acts as a competitive advantage in the modern economy, enabling both skill mastery and high-quality output.",
-  "This section explains the neurological basis of skill development through myelination, which occurs during intense focus and deliberate practice.",
-  "The argument presented emphasizes the biological mechanism behind why concentrated practice leads to skill improvement over time.",
-  "This part outlines different philosophical approaches to scheduling deep work, from complete dedication to fitting it into available time slots.",
-  "The main point addresses how constant digital stimulation may impair our ability to focus deeply when needed.",
-]
+const fakeSummaries: Record<TaskType, string[]> = {
+  summary: [
+    "This passage discusses the importance of focused concentration in professional work, suggesting it creates value and improves skills in ways that are difficult to replicate.",
+    "The key insight here relates to how deep work acts as a competitive advantage in the modern economy, enabling both skill mastery and high-quality output.",
+    "This section explains the neurological basis of skill development through myelination, which occurs during intense focus and deliberate practice.",
+  ],
+  explanation: [
+    "Think of deep work like training for a marathon: just as consistent running builds endurance, focused mental effort strengthens neural pathways. The more you practice without distractions, the faster your brain processes similar tasks.",
+    "Myelination is like adding insulation to electrical wires in your brain. When you concentrate deeply, you&apos;re essentially upgrading your brain&apos;s wiring, making thoughts flow faster and more efficiently along practiced pathways.",
+    "The different deep work philosophies are like workout routines: some people do best with intense daily sessions, others need longer recovery periods. Finding your rhythm is key to sustainable focus.",
+  ]
+}
 
 export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }: NotesPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -62,6 +68,19 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
   const cancelSelection = () => {
     setSelectedIds(new Set())
     setIsSelecting(false)
+  }
+
+  const getTaskLabel = (taskType: TaskType) => {
+    return taskType === "summary" ? "Summary" : "Explanation"
+  }
+
+  const getTaskIcon = (taskType: TaskType) => {
+    return taskType === "summary" ? FileText : Lightbulb
+  }
+
+  const getFakeSummary = (note: Note, index: number) => {
+    const summaries = fakeSummaries[note.taskType]
+    return summaries[index % summaries.length]
   }
 
   return (
@@ -136,64 +155,79 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
           </div>
         ) : (
           <div className="space-y-3">
-            {notes.map((note, index) => (
-              <div 
-                key={note.id}
-                className={`bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-all ${
-                  selectedIds.has(note.id) ? "ring-2 ring-primary/20 border-primary/30" : ""
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  {isSelecting && (
-                    <Checkbox
-                      checked={selectedIds.has(note.id)}
-                      onCheckedChange={() => toggleSelect(note.id)}
-                      className="mt-1 shrink-0"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start gap-2 mb-3">
-                      <div className="w-5 h-5 rounded bg-accent flex items-center justify-center shrink-0 mt-0.5">
-                        <Sparkles className="h-3 w-3 text-accent-foreground" />
-                      </div>
-                      <p className="text-sm text-foreground leading-relaxed">
-                        {fakeSummaries[index % fakeSummaries.length]}
-                      </p>
-                    </div>
-                    
-                    <div className="pl-7">
-                      <div className="bg-muted/50 rounded-md p-2.5 mb-3 border-l-2 border-border">
-                        <p className="text-xs text-muted-foreground line-clamp-2 italic">
-                          &ldquo;{note.sourceText}&rdquo;
+            {notes.map((note, index) => {
+              const TaskIcon = getTaskIcon(note.taskType)
+              return (
+                <div 
+                  key={note.id}
+                  className={`bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-all relative ${
+                    selectedIds.has(note.id) ? "ring-2 ring-primary/20 border-primary/30" : ""
+                  }`}
+                >
+                  {/* Task Type Tag */}
+                  <div className="absolute top-3 right-3">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium ${
+                      note.taskType === "summary" 
+                        ? "bg-blue-50 text-blue-600" 
+                        : "bg-amber-50 text-amber-600"
+                    }`}>
+                      <TaskIcon className="h-3 w-3" />
+                      {getTaskLabel(note.taskType)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    {isSelecting && (
+                      <Checkbox
+                        checked={selectedIds.has(note.id)}
+                        onCheckedChange={() => toggleSelect(note.id)}
+                        className="mt-1 shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0 pr-20">
+                      <div className="flex items-start gap-2 mb-3">
+                        <div className="w-5 h-5 rounded bg-accent flex items-center justify-center shrink-0 mt-0.5">
+                          <Sparkles className="h-3 w-3 text-accent-foreground" />
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed">
+                          {getFakeSummary(note, index)}
                         </p>
                       </div>
                       
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onViewSource(note)}
-                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          <ExternalLink className="h-3 w-3 mr-1.5" />
-                          View Source
-                        </Button>
-                        {!isSelecting && (
+                      <div className="pl-7">
+                        <div className="bg-muted/50 rounded-md p-2.5 mb-3 border-l-2 border-border">
+                          <p className="text-xs text-muted-foreground line-clamp-2 italic">
+                            &ldquo;{note.sourceText}&rdquo;
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => onDeleteNote(note.id)}
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => onViewSource(note)}
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <ExternalLink className="h-3 w-3 mr-1.5" />
+                            View Source
                           </Button>
-                        )}
+                          {!isSelecting && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onDeleteNote(note.id)}
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
