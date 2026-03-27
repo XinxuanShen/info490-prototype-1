@@ -46,8 +46,17 @@ export default function Home() {
         setHighlightedRange(null)
       }, 3000)
     } catch {
-      console.log("Could not restore range")
+      // Could not restore range
     }
+  }, [])
+
+  const handleDeleteNote = useCallback((noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId))
+  }, [])
+
+  const handleDeleteNotes = useCallback((noteIds: string[]) => {
+    const idsSet = new Set(noteIds)
+    setNotes((prev) => prev.filter((n) => !idsSet.has(n.id)))
   }, [])
 
   return (
@@ -99,7 +108,12 @@ export default function Home() {
               Back to Article
             </Button>
           </div>
-          <NotesPanel notes={notes} onViewSource={handleViewSource} />
+          <NotesPanel 
+            notes={notes} 
+            onViewSource={handleViewSource}
+            onDeleteNote={handleDeleteNote}
+            onDeleteNotes={handleDeleteNotes}
+          />
         </div>
       </div>
     </div>
