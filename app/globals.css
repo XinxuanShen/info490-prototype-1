@@ -125,3 +125,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes highlight-flash {
+  0% {
+    background-color: oklch(0.85 0.15 90);
+    box-shadow: 0 0 0 4px oklch(0.85 0.15 90 / 0.5);
+  }
+  50% {
+    background-color: oklch(0.92 0.08 90);
+    box-shadow: 0 0 0 2px oklch(0.92 0.08 90 / 0.3);
+  }
+  100% {
+    background-color: oklch(0.92 0.08 90);
+    box-shadow: none;
+  }
+}
+
+.highlight-flash {
+  animation: highlight-flash 1.2s ease-out;
+  border-radius: 2px;
+}

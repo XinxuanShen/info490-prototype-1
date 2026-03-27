@@ -83,14 +83,13 @@ export function ArticlePanel({ onHighlight, highlightedRange }: ArticlePanelProp
     if (highlightedRange) {
       try {
         const span = document.createElement("span")
-        span.className = "active-highlight bg-highlight rounded-sm px-0.5 -mx-0.5 transition-colors"
+        span.className = "active-highlight bg-highlight highlight-flash rounded-sm px-0.5 -mx-0.5"
         highlightedRange.surroundContents(span)
         
         // Scroll to the highlight
         span.scrollIntoView({ behavior: "smooth", block: "center" })
       } catch {
         // Range may span multiple elements, use alternative approach
-        console.log("Complex range, using fallback highlight")
       }
     }
   }, [highlightedRange])
