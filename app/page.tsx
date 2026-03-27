@@ -10,44 +10,32 @@ interface Note {
   id: string
   sourceText: string
   summary: string
-  range: Range
   createdAt: Date
 }
 
 export default function Home() {
   const [notes, setNotes] = useState<Note[]>([])
-  const [highlightedRange, setHighlightedRange] = useState<Range | null>(null)
+  const [highlightedText, setHighlightedText] = useState<string | null>(null)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
 
-  const handleHighlight = useCallback((text: string, range: Range) => {
+  const handleHighlight = useCallback((text: string) => {
     const newNote: Note = {
       id: crypto.randomUUID(),
       sourceText: text,
       summary: "",
-      range: range.cloneRange(),
       createdAt: new Date(),
     }
     
     setNotes((prev) => [newNote, ...prev])
-    setHighlightedRange(range)
-    
-    // Clear the highlight effect after a moment
-    setTimeout(() => {
-      setHighlightedRange(null)
-    }, 2000)
   }, [])
 
   const handleViewSource = useCallback((note: Note) => {
-    try {
-      setHighlightedRange(note.range)
-      
-      // Clear the highlight after a few seconds
-      setTimeout(() => {
-        setHighlightedRange(null)
-      }, 3000)
-    } catch {
-      // Could not restore range
-    }
+    setHighlightedText(note.sourceText)
+    
+    // Clear the highlight after a few seconds
+    setTimeout(() => {
+      setHighlightedText(null)
+    }, 3000)
   }, [])
 
   const handleDeleteNote = useCallback((noteId: string) => {
@@ -83,7 +71,7 @@ export default function Home() {
         <div className={`flex-1 ${isPanelOpen ? "hidden md:block" : "block"}`}>
           <ArticlePanel 
             onHighlight={handleHighlight} 
-            highlightedRange={highlightedRange}
+            highlightedText={highlightedText}
           />
         </div>
 

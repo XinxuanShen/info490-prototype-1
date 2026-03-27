@@ -3,8 +3,8 @@
 import { useCallback, useRef, useEffect } from "react"
 
 interface ArticlePanelProps {
-  onHighlight: (text: string, range: Range) => void
-  highlightedRange: Range | null
+  onHighlight: (text: string) => void
+  highlightedText: string | null
 }
 
 const articleContent = [
@@ -50,8 +50,9 @@ const articleContent = [
   }
 ]
 
-export function ArticlePanel({ onHighlight, highlightedRange }: ArticlePanelProps) {
+export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
+  const highlightRef = useRef<HTMLSpanElement>(null)
 
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection()
@@ -60,18 +61,20 @@ export function ArticlePanel({ onHighlight, highlightedRange }: ArticlePanelProp
     const selectedText = selection.toString().trim()
     if (selectedText.length < 5) return
 
-    const range = selection.getRangeAt(0)
-    
     // Check if selection is within the article
+    const range = selection.getRangeAt(0)
     if (articleRef.current?.contains(range.commonAncestorContainer)) {
-      onHighlight(selectedText, range)
+      onHighlight(selectedText)
+      selection.removeAllRanges()
     }
   }, [onHighlight])
 
-  // Apply highlight when highlightedRange changes
+  // Find and highlight text when highlightedText changes
   useEffect(() => {
+    if (!articleRef.current) return
+
     // Clear all previous highlights
-    const existingHighlights = document.querySelectorAll(".active-highlight")
+    const existingHighlights = articleRef.current.querySelectorAll(".active-highlight")
     existingHighlights.forEach((el) => {
       const parent = el.parentNode
       if (parent) {
@@ -80,19 +83,40 @@ export function ArticlePanel({ onHighlight, highlightedRange }: ArticlePanelProp
       }
     })
 
-    if (highlightedRange) {
-      try {
-        const span = document.createElement("span")
-        span.className = "active-highlight bg-highlight highlight-flash rounded-sm px-0.5 -mx-0.5"
-        highlightedRange.surroundContents(span)
+    if (highlightedText && articleRef.current) {
+      // Use TreeWalker to find the text in the article
+      const treeWalker = document.createTreeWalker(
+        articleRef.current,
+        NodeFilter.SHOW_TEXT,
+        null
+      )
+
+      let node: Text | null
+      while ((node = treeWalker.nextNode() as Text | null)) {
+        const textContent = node.textContent || ""
+        const index = textContent.indexOf(highlightedText)
         
-        // Scroll to the highlight
-        span.scrollIntoView({ behavior: "smooth", block: "center" })
-      } catch {
-        // Range may span multiple elements, use alternative approach
+        if (index !== -1) {
+          // Found the text, create a range and highlight it
+          const range = document.createRange()
+          range.setStart(node, index)
+          range.setEnd(node, index + highlightedText.length)
+          
+          const span = document.createElement("span")
+          span.className = "active-highlight bg-highlight highlight-flash rounded-sm px-0.5 -mx-0.5"
+          
+          try {
+            range.surroundContents(span)
+            // Scroll to the highlight
+            span.scrollIntoView({ behavior: "smooth", block: "center" })
+          } catch {
+            // If surroundContents fails, try an alternative approach
+          }
+          break
+        }
       }
     }
-  }, [highlightedRange])
+  }, [highlightedText])
 
   return (
     <div 
