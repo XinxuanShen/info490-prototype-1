@@ -7,6 +7,7 @@ import { FileText, PanelRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export type TaskType = "summary" | "explanation" | "concept" | "question"
+export type ImportanceLevel = "high" | "medium" | "low"
 
 export interface ImportantSentence {
   text: string
@@ -18,8 +19,17 @@ export interface Note {
   sourceTexts: string[]
   summary: string
   taskType: TaskType
+  importance: ImportanceLevel
   importantSentences: ImportantSentence[]
   createdAt: Date
+}
+
+// Map task types to importance levels
+const taskImportanceMap: Record<TaskType, ImportanceLevel> = {
+  concept: "high",
+  question: "high",
+  summary: "medium",
+  explanation: "medium",
 }
 
 export default function Home() {
