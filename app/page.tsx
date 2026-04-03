@@ -1,45 +1,143 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { ArticlePanel } from "@/components/article-panel"
 import { NotesPanel } from "@/components/notes-panel"
 import { FileText, PanelRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-type TaskType = "summary" | "explanation"
+export type TaskType = "summary" | "explanation" | "concept" | "question"
 
-interface Note {
+export interface ImportantSentence {
+  text: string
+  importance: "high" | "medium"
+}
+
+export interface Note {
   id: string
-  sourceText: string
+  sourceTexts: string[]
   summary: string
   taskType: TaskType
+  importantSentences: ImportantSentence[]
   createdAt: Date
 }
 
 export default function Home() {
   const [notes, setNotes] = useState<Note[]>([])
   const [highlightedText, setHighlightedText] = useState<string | null>(null)
+  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const [pendingSelections, setPendingSelections] = useState<string[]>([])
+
+  // Find note being hovered to highlight its source
+  const hoveredNote = useMemo(() => {
+    if (!hoveredNoteId) return null
+    return notes.find(n => n.id === hoveredNoteId) || null
+  }, [hoveredNoteId, notes])
+
+  // Check if text overlaps with existing notes
+  const findOverlappingNote = useCallback((texts: string[]): Note | null => {
+    for (const note of notes) {
+      for (const sourceText of note.sourceTexts) {
+        for (const text of texts) {
+          // Check if texts overlap significantly
+          if (sourceText.includes(text) || text.includes(sourceText)) {
+            return note
+          }
+          // Check for partial overlap (at least 50 chars match)
+          const minLen = Math.min(sourceText.length, text.length)
+          if (minLen > 50) {
+            const overlap = findOverlapLength(sourceText, text)
+            if (overlap > minLen * 0.5) {
+              return note
+            }
+          }
+        }
+      }
+    }
+    return null
+  }, [notes])
+
+  // Helper to find overlap length between two strings
+  const findOverlapLength = (str1: string, str2: string): number => {
+    let maxOverlap = 0
+    const shorter = str1.length < str2.length ? str1 : str2
+    const longer = str1.length < str2.length ? str2 : str1
+    
+    for (let i = 0; i < shorter.length; i++) {
+      if (longer.includes(shorter.slice(i))) {
+        maxOverlap = Math.max(maxOverlap, shorter.length - i)
+        break
+      }
+    }
+    return maxOverlap
+  }
+
+  // Generate fake important sentences from source text
+  const generateImportantSentences = (texts: string[]): ImportantSentence[] => {
+    const sentences: ImportantSentence[] = []
+    texts.forEach(text => {
+      const textSentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20)
+      if (textSentences.length > 0) {
+        sentences.push({ text: textSentences[0].trim(), importance: "high" })
+      }
+      if (textSentences.length > 1) {
+        sentences.push({ text: textSentences[1].trim(), importance: "medium" })
+      }
+    })
+    return sentences
+  }
 
   const handleHighlight = useCallback((text: string, taskType: TaskType) => {
+    const allTexts = [...pendingSelections, text]
+    
     const newNote: Note = {
       id: crypto.randomUUID(),
-      sourceText: text,
+      sourceTexts: allTexts,
       summary: "",
       taskType,
+      importantSentences: generateImportantSentences(allTexts),
       createdAt: new Date(),
     }
     
     setNotes((prev) => [newNote, ...prev])
+    setPendingSelections([])
+  }, [pendingSelections])
+
+  const handleAddSelection = useCallback((text: string) => {
+    setPendingSelections((prev) => [...prev, text])
+  }, [])
+
+  const handleClearSelections = useCallback(() => {
+    setPendingSelections([])
+  }, [])
+
+  const handleUpdateNote = useCallback((noteId: string, newText: string, taskType: TaskType) => {
+    setNotes((prev) => prev.map(note => {
+      if (note.id === noteId) {
+        const allTexts = [...note.sourceTexts, newText]
+        return {
+          ...note,
+          sourceTexts: allTexts,
+          taskType,
+          importantSentences: generateImportantSentences(allTexts),
+        }
+      }
+      return note
+    }))
+    setPendingSelections([])
   }, [])
 
   const handleViewSource = useCallback((note: Note) => {
-    setHighlightedText(note.sourceText)
+    setHighlightedText(note.sourceTexts[0])
     
-    // Clear the highlight after a few seconds
     setTimeout(() => {
       setHighlightedText(null)
     }, 3000)
+  }, [])
+
+  const handleNoteHover = useCallback((noteId: string | null) => {
+    setHoveredNoteId(noteId)
   }, [])
 
   const handleDeleteNote = useCallback((noteId: string) => {
@@ -57,7 +155,7 @@ export default function Home() {
       <header className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">Article Reader</span>
+          <span className="text-sm font-medium text-foreground">AutoNote</span>
         </div>
         <Button
           variant="ghost"
@@ -74,8 +172,14 @@ export default function Home() {
         {/* Article Panel */}
         <div className={`flex-1 ${isPanelOpen ? "hidden md:block" : "block"}`}>
           <ArticlePanel 
-            onHighlight={handleHighlight} 
+            onHighlight={handleHighlight}
+            onAddSelection={handleAddSelection}
+            onClearSelections={handleClearSelections}
+            onUpdateNote={handleUpdateNote}
             highlightedText={highlightedText}
+            hoveredNote={hoveredNote}
+            pendingSelections={pendingSelections}
+            findOverlappingNote={findOverlappingNote}
           />
         </div>
 
@@ -85,7 +189,7 @@ export default function Home() {
         {/* Notes Panel */}
         <div 
           className={`
-            ${isPanelOpen ? "w-full md:w-96" : "hidden"}
+            ${isPanelOpen ? "w-full md:w-[420px]" : "hidden"}
             shrink-0 border-l border-border md:border-l-0
           `}
         >
@@ -103,6 +207,7 @@ export default function Home() {
           <NotesPanel 
             notes={notes} 
             onViewSource={handleViewSource}
+            onNoteHover={handleNoteHover}
             onDeleteNote={handleDeleteNote}
             onDeleteNotes={handleDeleteNotes}
           />

@@ -3,21 +3,25 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb } from "lucide-react"
-
-type TaskType = "summary" | "explanation"
-
-interface Note {
-  id: string
-  sourceText: string
-  summary: string
-  taskType: TaskType
-  createdAt: Date
-}
+import { 
+  FileText, 
+  Sparkles, 
+  ExternalLink, 
+  Trash2, 
+  X, 
+  Lightbulb, 
+  BookOpen, 
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  Info
+} from "lucide-react"
+import type { TaskType, Note } from "@/app/page"
 
 interface NotesPanelProps {
   notes: Note[]
   onViewSource: (note: Note) => void
+  onNoteHover: (noteId: string | null) => void
   onDeleteNote: (noteId: string) => void
   onDeleteNotes: (noteIds: string[]) => void
 }
@@ -30,17 +34,47 @@ const fakeSummaries: Record<TaskType, string[]> = {
   ],
   explanation: [
     "Think of deep work like training for a marathon: just as consistent running builds endurance, focused mental effort strengthens neural pathways. The more you practice without distractions, the faster your brain processes similar tasks.",
-    "Myelination is like adding insulation to electrical wires in your brain. When you concentrate deeply, you&apos;re essentially upgrading your brain&apos;s wiring, making thoughts flow faster and more efficiently along practiced pathways.",
+    "Myelination is like adding insulation to electrical wires in your brain. When you concentrate deeply, you're essentially upgrading your brain's wiring, making thoughts flow faster and more efficiently along practiced pathways.",
     "The different deep work philosophies are like workout routines: some people do best with intense daily sessions, others need longer recovery periods. Finding your rhythm is key to sustainable focus.",
+  ],
+  concept: [
+    "Deep Work: Professional activities performed in distraction-free concentration that push cognitive capabilities to their limit, creating new value and improving skills.",
+    "Myelination: The biological process where focused practice causes fatty tissue to grow around neurons, improving signal transmission speed and accuracy.",
+    "Depth Philosophy: A personal framework for scheduling deep work sessions, ranging from monastic (extended isolation) to journalistic (fitting focus wherever possible).",
+  ],
+  question: [
+    "How might you restructure your daily schedule to incorporate at least 2 hours of uninterrupted deep work? What specific distractions would you need to eliminate?",
+    "If myelination requires focused repetition, what skill in your current work would benefit most from deliberate practice sessions?",
+    "Which deep work philosophy (monastic, bimodal, rhythmic, or journalistic) aligns best with your lifestyle, and how could you implement it this week?",
   ]
 }
 
-export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }: NotesPanelProps) {
+const taskConfig: Record<TaskType, { label: string; icon: typeof FileText; bgColor: string; textColor: string }> = {
+  summary: { label: "Summary", icon: FileText, bgColor: "bg-blue-50", textColor: "text-blue-600" },
+  explanation: { label: "Explanation", icon: Lightbulb, bgColor: "bg-amber-50", textColor: "text-amber-600" },
+  concept: { label: "Key Concept", icon: BookOpen, bgColor: "bg-emerald-50", textColor: "text-emerald-600" },
+  question: { label: "Question", icon: HelpCircle, bgColor: "bg-purple-50", textColor: "text-purple-600" },
+}
+
+export function NotesPanel({ notes, onViewSource, onNoteHover, onDeleteNote, onDeleteNotes }: NotesPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isSelecting, setIsSelecting] = useState(false)
+  const [expandedExplainIds, setExpandedExplainIds] = useState<Set<string>>(new Set())
 
   const toggleSelect = (noteId: string) => {
     setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(noteId)) {
+        next.delete(noteId)
+      } else {
+        next.add(noteId)
+      }
+      return next
+    })
+  }
+
+  const toggleExplain = (noteId: string) => {
+    setExpandedExplainIds((prev) => {
       const next = new Set(prev)
       if (next.has(noteId)) {
         next.delete(noteId)
@@ -68,14 +102,6 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
   const cancelSelection = () => {
     setSelectedIds(new Set())
     setIsSelecting(false)
-  }
-
-  const getTaskLabel = (taskType: TaskType) => {
-    return taskType === "summary" ? "Summary" : "Explanation"
-  }
-
-  const getTaskIcon = (taskType: TaskType) => {
-    return taskType === "summary" ? FileText : Lightbulb
   }
 
   const getFakeSummary = (note: Note, index: number) => {
@@ -156,23 +182,24 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
         ) : (
           <div className="space-y-3">
             {notes.map((note, index) => {
-              const TaskIcon = getTaskIcon(note.taskType)
+              const config = taskConfig[note.taskType]
+              const TaskIcon = config.icon
+              const isExplainExpanded = expandedExplainIds.has(note.id)
+              
               return (
                 <div 
                   key={note.id}
                   className={`bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-all relative ${
                     selectedIds.has(note.id) ? "ring-2 ring-primary/20 border-primary/30" : ""
                   }`}
+                  onMouseEnter={() => onNoteHover(note.id)}
+                  onMouseLeave={() => onNoteHover(null)}
                 >
                   {/* Task Type Tag */}
                   <div className="absolute top-3 right-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium ${
-                      note.taskType === "summary" 
-                        ? "bg-blue-50 text-blue-600" 
-                        : "bg-amber-50 text-amber-600"
-                    }`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium ${config.bgColor} ${config.textColor}`}>
                       <TaskIcon className="h-3 w-3" />
-                      {getTaskLabel(note.taskType)}
+                      {config.label}
                     </span>
                   </div>
 
@@ -195,10 +222,56 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
                       </div>
                       
                       <div className="pl-7">
-                        <div className="bg-muted/50 rounded-md p-2.5 mb-3 border-l-2 border-border">
-                          <p className="text-xs text-muted-foreground line-clamp-2 italic">
-                            &ldquo;{note.sourceText}&rdquo;
-                          </p>
+                        {/* Source text quotes */}
+                        <div className="space-y-2 mb-3">
+                          {note.sourceTexts.map((text, idx) => (
+                            <div key={idx} className="bg-muted/50 rounded-md p-2.5 border-l-2 border-border">
+                              <p className="text-xs text-muted-foreground line-clamp-2 italic">
+                                &ldquo;{text}&rdquo;
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Why this note section */}
+                        <div className="mb-3">
+                          <button
+                            onClick={() => toggleExplain(note.id)}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <Info className="h-3 w-3" />
+                            <span>Why this note?</span>
+                            {isExplainExpanded ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            )}
+                          </button>
+                          
+                          {isExplainExpanded && (
+                            <div className="mt-2 p-3 bg-muted/30 rounded-md border border-border">
+                              <p className="text-xs text-muted-foreground mb-2">
+                                This note was generated based on your highlighted text and key supporting sentences:
+                              </p>
+                              {note.importantSentences.length > 0 && (
+                                <ul className="space-y-1.5">
+                                  {note.importantSentences.map((sentence, idx) => (
+                                    <li key={idx} className="flex items-start gap-2 text-xs">
+                                      <span className={`inline-block w-2 h-2 rounded-full mt-1 shrink-0 ${
+                                        sentence.importance === "high" ? "bg-amber-400" : "bg-amber-200"
+                                      }`} />
+                                      <span className="text-muted-foreground">
+                                        <span className="font-medium text-foreground/80">
+                                          {sentence.importance === "high" ? "High" : "Medium"} relevance:
+                                        </span>{" "}
+                                        &ldquo;{sentence.text.slice(0, 80)}...&rdquo;
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          )}
                         </div>
                         
                         <div className="flex items-center gap-1">

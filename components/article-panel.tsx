@@ -1,13 +1,18 @@
 "use client"
 
 import { useCallback, useRef, useEffect, useState } from "react"
-import { FileText, Lightbulb } from "lucide-react"
-
-type TaskType = "summary" | "explanation"
+import { FileText, Lightbulb, BookOpen, HelpCircle, Plus, X, RefreshCw } from "lucide-react"
+import type { TaskType, Note } from "@/app/page"
 
 interface ArticlePanelProps {
   onHighlight: (text: string, taskType: TaskType) => void
+  onAddSelection: (text: string) => void
+  onClearSelections: () => void
+  onUpdateNote: (noteId: string, newText: string, taskType: TaskType) => void
   highlightedText: string | null
+  hoveredNote: Note | null
+  pendingSelections: string[]
+  findOverlappingNote: (texts: string[]) => Note | null
 }
 
 interface ToolbarPosition {
@@ -58,16 +63,27 @@ const articleContent = [
   }
 ]
 
-export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps) {
+export function ArticlePanel({ 
+  onHighlight, 
+  onAddSelection,
+  onClearSelections,
+  onUpdateNote,
+  highlightedText, 
+  hoveredNote,
+  pendingSelections,
+  findOverlappingNote
+}: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
   const [selectedText, setSelectedText] = useState<string | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
+  const [overlappingNote, setOverlappingNote] = useState<Note | null>(null)
 
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed) {
       setSelectedText(null)
       setToolbarPosition(null)
+      setOverlappingNote(null)
       return
     }
 
@@ -75,10 +91,10 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
     if (text.length < 5) {
       setSelectedText(null)
       setToolbarPosition(null)
+      setOverlappingNote(null)
       return
     }
 
-    // Check if selection is within the article
     const range = selection.getRangeAt(0)
     if (articleRef.current?.contains(range.commonAncestorContainer)) {
       const rect = range.getBoundingClientRect()
@@ -89,28 +105,56 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
         x: rect.left + rect.width / 2 - articleRect.left,
         y: rect.top - articleRect.top + articleRef.current.scrollTop - 10
       })
+      
+      // Check for overlapping notes
+      const existing = findOverlappingNote([...pendingSelections, text])
+      setOverlappingNote(existing)
     }
-  }, [])
+  }, [findOverlappingNote, pendingSelections])
 
   const handleTaskSelect = useCallback((taskType: TaskType) => {
     if (selectedText) {
       onHighlight(selectedText, taskType)
       setSelectedText(null)
       setToolbarPosition(null)
+      setOverlappingNote(null)
       window.getSelection()?.removeAllRanges()
     }
   }, [selectedText, onHighlight])
 
-  // Close toolbar when clicking outside
+  const handleUpdateExisting = useCallback((taskType: TaskType) => {
+    if (selectedText && overlappingNote) {
+      onUpdateNote(overlappingNote.id, selectedText, taskType)
+      setSelectedText(null)
+      setToolbarPosition(null)
+      setOverlappingNote(null)
+      window.getSelection()?.removeAllRanges()
+    }
+  }, [selectedText, overlappingNote, onUpdateNote])
+
+  const handleAddToMulti = useCallback(() => {
+    if (selectedText) {
+      onAddSelection(selectedText)
+      setSelectedText(null)
+      setToolbarPosition(null)
+      setOverlappingNote(null)
+      window.getSelection()?.removeAllRanges()
+    }
+  }, [selectedText, onAddSelection])
+
+  const handleClearPending = useCallback(() => {
+    onClearSelections()
+  }, [onClearSelections])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      if (!target.closest(".selection-toolbar")) {
-        // Small delay to allow button click to process
+      if (!target.closest(".selection-toolbar") && !target.closest(".pending-selections-bar")) {
         setTimeout(() => {
           if (!window.getSelection()?.toString().trim()) {
             setSelectedText(null)
             setToolbarPosition(null)
+            setOverlappingNote(null)
           }
         }, 100)
       }
@@ -120,12 +164,12 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Find and highlight text when highlightedText changes
+  // Highlight text from View Source or hover
   useEffect(() => {
     if (!articleRef.current) return
 
     // Clear all previous highlights
-    const existingHighlights = articleRef.current.querySelectorAll(".active-highlight")
+    const existingHighlights = articleRef.current.querySelectorAll(".active-highlight, .hover-highlight, .importance-high, .importance-medium")
     existingHighlights.forEach((el) => {
       const parent = el.parentNode
       if (parent) {
@@ -134,8 +178,16 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
       }
     })
 
-    if (highlightedText && articleRef.current) {
-      // Use TreeWalker to find the text in the article
+    const textToHighlight = highlightedText || (hoveredNote?.sourceTexts || [])
+    const isHover = !highlightedText && hoveredNote
+    
+    if (!textToHighlight || (Array.isArray(textToHighlight) && textToHighlight.length === 0)) return
+
+    const textsToFind = Array.isArray(textToHighlight) ? textToHighlight : [textToHighlight]
+    
+    textsToFind.forEach((text, idx) => {
+      if (!articleRef.current) return
+      
       const treeWalker = document.createTreeWalker(
         articleRef.current,
         NodeFilter.SHOW_TEXT,
@@ -145,29 +197,124 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
       let node: Text | null
       while ((node = treeWalker.nextNode() as Text | null)) {
         const textContent = node.textContent || ""
-        const index = textContent.indexOf(highlightedText)
+        const index = textContent.indexOf(text)
         
         if (index !== -1) {
-          // Found the text, create a range and highlight it
           const range = document.createRange()
           range.setStart(node, index)
-          range.setEnd(node, index + highlightedText.length)
+          range.setEnd(node, index + text.length)
           
           const span = document.createElement("span")
-          span.className = "active-highlight bg-highlight highlight-flash rounded-sm px-0.5 -mx-0.5"
+          if (isHover) {
+            span.className = "hover-highlight bg-highlight/60 rounded-sm px-0.5 -mx-0.5 transition-colors"
+          } else {
+            span.className = "active-highlight bg-highlight highlight-flash rounded-sm px-0.5 -mx-0.5"
+          }
           
           try {
             range.surroundContents(span)
-            // Scroll to the highlight
-            span.scrollIntoView({ behavior: "smooth", block: "center" })
+            if (idx === 0 && !isHover) {
+              span.scrollIntoView({ behavior: "smooth", block: "center" })
+            }
           } catch {
-            // If surroundContents fails, try an alternative approach
+            // surroundContents failed
           }
           break
         }
       }
+    })
+
+    // Also highlight important sentences if hovering
+    if (isHover && hoveredNote?.importantSentences) {
+      hoveredNote.importantSentences.forEach((sentence) => {
+        if (!articleRef.current) return
+        
+        const treeWalker = document.createTreeWalker(
+          articleRef.current,
+          NodeFilter.SHOW_TEXT,
+          null
+        )
+
+        let node: Text | null
+        while ((node = treeWalker.nextNode() as Text | null)) {
+          const textContent = node.textContent || ""
+          const index = textContent.indexOf(sentence.text)
+          
+          if (index !== -1) {
+            const range = document.createRange()
+            range.setStart(node, index)
+            range.setEnd(node, index + sentence.text.length)
+            
+            const span = document.createElement("span")
+            span.className = sentence.importance === "high" 
+              ? "importance-high bg-amber-200/80 rounded-sm px-0.5 -mx-0.5 border-b-2 border-amber-400"
+              : "importance-medium bg-amber-100/60 rounded-sm px-0.5 -mx-0.5 border-b border-amber-300"
+            
+            try {
+              range.surroundContents(span)
+            } catch {
+              // surroundContents failed
+            }
+            break
+          }
+        }
+      })
     }
-  }, [highlightedText])
+  }, [highlightedText, hoveredNote])
+
+  // Highlight pending selections
+  useEffect(() => {
+    if (!articleRef.current) return
+    
+    // Clear pending highlights
+    const existingPending = articleRef.current.querySelectorAll(".pending-highlight")
+    existingPending.forEach((el) => {
+      const parent = el.parentNode
+      if (parent) {
+        parent.replaceChild(document.createTextNode(el.textContent || ""), el)
+        parent.normalize()
+      }
+    })
+
+    pendingSelections.forEach((text) => {
+      if (!articleRef.current) return
+      
+      const treeWalker = document.createTreeWalker(
+        articleRef.current,
+        NodeFilter.SHOW_TEXT,
+        null
+      )
+
+      let node: Text | null
+      while ((node = treeWalker.nextNode() as Text | null)) {
+        const textContent = node.textContent || ""
+        const index = textContent.indexOf(text)
+        
+        if (index !== -1) {
+          const range = document.createRange()
+          range.setStart(node, index)
+          range.setEnd(node, index + text.length)
+          
+          const span = document.createElement("span")
+          span.className = "pending-highlight bg-blue-100 rounded-sm px-0.5 -mx-0.5 border-b-2 border-blue-400"
+          
+          try {
+            range.surroundContents(span)
+          } catch {
+            // surroundContents failed
+          }
+          break
+        }
+      }
+    })
+  }, [pendingSelections])
+
+  const taskOptions: { type: TaskType; label: string; icon: React.ElementType }[] = [
+    { type: "summary", label: "Summarize", icon: FileText },
+    { type: "explanation", label: "Explain", icon: Lightbulb },
+    { type: "concept", label: "Key Concept", icon: BookOpen },
+    { type: "question", label: "Question", icon: HelpCircle },
+  ]
 
   return (
     <div 
@@ -175,6 +322,35 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
       className="h-full overflow-y-auto px-8 py-12 md:px-16 lg:px-24 relative"
       onMouseUp={handleMouseUp}
     >
+      {/* Pending Selections Bar */}
+      {pendingSelections.length > 0 && (
+        <div className="pending-selections-bar fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background rounded-lg shadow-lg p-3 flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium">{pendingSelections.length} selection{pendingSelections.length > 1 ? "s" : ""}</span>
+            <button
+              onClick={handleClearPending}
+              className="p-1 hover:bg-background/10 rounded"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="w-px h-5 bg-background/20" />
+          <span className="text-xs text-background/70">Select more text or choose action:</span>
+          <div className="flex gap-1">
+            {taskOptions.map(({ type, label, icon: Icon }) => (
+              <button
+                key={type}
+                onClick={() => handleTaskSelect(type)}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium hover:bg-background/10 rounded transition-colors"
+              >
+                <Icon className="h-3 w-3" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Selection Toolbar */}
       {selectedText && toolbarPosition && (
         <div 
@@ -184,22 +360,58 @@ export function ArticlePanel({ onHighlight, highlightedText }: ArticlePanelProps
             top: toolbarPosition.y 
           }}
         >
-          <div className="bg-foreground text-background rounded-lg shadow-lg flex overflow-hidden">
-            <button
-              onClick={() => handleTaskSelect("summary")}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-background/10 transition-colors"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              Summary
-            </button>
-            <div className="w-px bg-background/20" />
-            <button
-              onClick={() => handleTaskSelect("explanation")}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-medium hover:bg-background/10 transition-colors"
-            >
-              <Lightbulb className="h-3.5 w-3.5" />
-              Explanation
-            </button>
+          <div className="bg-foreground text-background rounded-lg shadow-lg overflow-hidden">
+            {/* Update existing note option */}
+            {overlappingNote && (
+              <>
+                <div className="px-3 py-2 bg-background/10 border-b border-background/20">
+                  <div className="flex items-center gap-2 text-xs">
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Update existing note?</span>
+                  </div>
+                </div>
+                <div className="flex border-b border-background/20">
+                  {taskOptions.map(({ type, label, icon: Icon }) => (
+                    <button
+                      key={`update-${type}`}
+                      onClick={() => handleUpdateExisting(type)}
+                      className="flex items-center gap-1.5 px-2.5 py-2 text-[11px] font-medium hover:bg-background/10 transition-colors"
+                    >
+                      <Icon className="h-3 w-3" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="px-3 py-1.5 text-[10px] text-background/60 bg-background/5">
+                  Or create new:
+                </div>
+              </>
+            )}
+            
+            {/* Main action buttons */}
+            <div className="flex">
+              {/* Add to multi-select button */}
+              <button
+                onClick={handleAddToMulti}
+                className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium hover:bg-background/10 transition-colors border-r border-background/20"
+                title="Add to multi-selection"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              
+              {taskOptions.map(({ type, label, icon: Icon }, idx) => (
+                <button
+                  key={type}
+                  onClick={() => handleTaskSelect(type)}
+                  className={`flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium hover:bg-background/10 transition-colors ${
+                    idx < taskOptions.length - 1 ? "border-r border-background/20" : ""
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           {/* Arrow */}
           <div className="absolute left-1/2 -translate-x-1/2 top-full">
