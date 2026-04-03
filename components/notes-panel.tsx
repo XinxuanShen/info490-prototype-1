@@ -14,7 +14,8 @@ import {
   HelpCircle,
   ChevronDown,
   ChevronUp,
-  Info
+  Info,
+  Filter
 } from "lucide-react"
 import type { TaskType, Note } from "@/app/page"
 
@@ -60,6 +61,28 @@ export function NotesPanel({ notes, onViewSource, onNoteHover, onDeleteNote, onD
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isSelecting, setIsSelecting] = useState(false)
   const [expandedExplainIds, setExpandedExplainIds] = useState<Set<string>>(new Set())
+  const [activeFilters, setActiveFilters] = useState<Set<TaskType>>(new Set())
+  const [showFilters, setShowFilters] = useState(false)
+
+  const toggleFilter = (taskType: TaskType) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(taskType)) {
+        next.delete(taskType)
+      } else {
+        next.add(taskType)
+      }
+      return next
+    })
+  }
+
+  const clearFilters = () => {
+    setActiveFilters(new Set())
+  }
+
+  const filteredNotes = activeFilters.size === 0 
+    ? notes 
+    : notes.filter((note) => activeFilters.has(note.taskType))
 
   const toggleSelect = (noteId: string) => {
     setSelectedIds((prev) => {
@@ -117,20 +140,90 @@ export function NotesPanel({ notes, onViewSource, onNoteHover, onDeleteNote, onD
             <FileText className="h-4 w-4 text-muted-foreground" />
             <h2 className="font-semibold text-foreground text-sm">Notes</h2>
             <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-              {notes.length}
+              {filteredNotes.length}{activeFilters.size > 0 ? `/${notes.length}` : ""}
             </span>
           </div>
-          {notes.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsSelecting(!isSelecting)}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {isSelecting ? "Done" : "Select"}
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {notes.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowFilters(!showFilters)}
+                className={`h-7 px-2 text-xs ${
+                  activeFilters.size > 0 
+                    ? "text-primary bg-primary/10" 
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Filter className="h-3.5 w-3.5 mr-1" />
+                Filter
+                {activeFilters.size > 0 && (
+                  <span className="ml-1 bg-primary text-primary-foreground rounded-full w-4 h-4 text-[10px] flex items-center justify-center">
+                    {activeFilters.size}
+                  </span>
+                )}
+              </Button>
+            )}
+            {notes.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsSelecting(!isSelecting)}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {isSelecting ? "Done" : "Select"}
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Filter options */}
+        {showFilters && notes.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-muted-foreground">Filter by label</span>
+              {activeFilters.size > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(taskConfig) as TaskType[]).map((taskType) => {
+                const config = taskConfig[taskType]
+                const TaskIcon = config.icon
+                const isActive = activeFilters.has(taskType)
+                const count = notes.filter((n) => n.taskType === taskType).length
+                
+                return (
+                  <button
+                    key={taskType}
+                    onClick={() => toggleFilter(taskType)}
+                    disabled={count === 0}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
+                      isActive 
+                        ? `${config.bgColor} ${config.textColor} ring-2 ring-offset-1 ring-current/20` 
+                        : count === 0
+                        ? "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    <TaskIcon className="h-3 w-3" />
+                    {config.label}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                      isActive ? "bg-white/50" : "bg-background"
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {isSelecting && notes.length > 0 && (
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
@@ -179,9 +272,27 @@ export function NotesPanel({ notes, onViewSource, onNoteHover, onDeleteNote, onD
               Highlight text in the article to generate AI-powered notes
             </p>
           </div>
+        ) : filteredNotes.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center px-6">
+            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
+              <Filter className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium text-foreground mb-1">No matching notes</p>
+            <p className="text-xs text-muted-foreground max-w-[200px]">
+              Try adjusting your filters to see more notes
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearFilters}
+              className="mt-3 text-xs"
+            >
+              Clear filters
+            </Button>
+          </div>
         ) : (
           <div className="space-y-3">
-            {notes.map((note, index) => {
+            {filteredNotes.map((note, index) => {
               const config = taskConfig[note.taskType]
               const TaskIcon = config.icon
               const isExplainExpanded = expandedExplainIds.has(note.id)
