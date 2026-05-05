@@ -23,6 +23,7 @@ type SortOption =
 interface Note {
   id: string
   sourceText: string
+  sourceTexts?: string[]
   summary: string
   taskType: TaskType
   importance: ImportanceLevel
@@ -34,6 +35,11 @@ interface NotesPanelProps {
   onViewSource: (note: Note) => void
   onDeleteNote: (noteId: string) => void
   onDeleteNotes: (noteIds: string[]) => void
+  onUpdateNoteLabels: (
+    noteId: string,
+    updates: Partial<Pick<Note, "taskType" | "importance">>
+  ) => void
+  onHoverNote?: (note: Note | null) => void
 }
 
 const IMPORTANCE_ORDER: Record<ImportanceLevel, number> = {
@@ -90,7 +96,7 @@ function formatRelativeTime(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }: NotesPanelProps) {
+export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, onUpdateNoteLabels, onHoverNote }: NotesPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isSelecting, setIsSelecting] = useState(false)
   const [sortOption, setSortOption] = useState<SortOption>("created-newest")
@@ -152,7 +158,7 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
       case "explanation":
         return "Explanation"
       case "concept":
-        return "Key Concept"
+        return "Key Points"
       case "question":
         return "Question"
       default:
@@ -312,27 +318,51 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
               return (
                 <div
                   key={note.id}
+                  id={`note-${note.id}`}
+                  onMouseEnter={() => onHoverNote?.(note)}
+                  onMouseLeave={() => onHoverNote?.(null)}
                   className={`bg-card rounded-lg border border-border p-4 shadow-sm hover:shadow-md transition-all relative ${
                     selectedIds.has(note.id) ? "ring-2 ring-primary/20 border-primary/30" : ""
                   }`}
                 >
-                  {/* Top-right badges row */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                    {/* Importance badge */}
-                    <span
-                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${
-                        IMPORTANCE_STYLES[note.importance]
-                      }`}
+                  {/* Editable labels row */}
+                  <div className="flex items-center justify-end gap-1.5 mb-3">
+                    <Select
+                      value={note.importance}
+                      onValueChange={(value) =>
+                        onUpdateNoteLabels(note.id, { importance: value as ImportanceLevel })
+                      }
                     >
-                      {note.importance}
-                    </span>
-                    {/* Task type badge */}
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium ${TASK_TYPE_STYLES[note.taskType]}`}
+                      <SelectTrigger
+                        className={`h-7 w-[72px] px-2 text-[10px] font-semibold tracking-wide border-0 shadow-none ${IMPORTANCE_STYLES[note.importance]}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="High" className="text-xs">High</SelectItem>
+                        <SelectItem value="Medium" className="text-xs">Medium</SelectItem>
+                        <SelectItem value="Low" className="text-xs">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select
+                      value={note.taskType}
+                      onValueChange={(value) =>
+                        onUpdateNoteLabels(note.id, { taskType: value as TaskType })
+                      }
                     >
-                      <TaskIcon className="h-3 w-3" />
-                      {getTaskLabel(note.taskType)}
-                    </span>
+                      <SelectTrigger
+                        className={`h-7 w-[112px] px-2 text-[10px] font-medium border-0 shadow-none ${TASK_TYPE_STYLES[note.taskType]}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="summary" className="text-xs">Summary</SelectItem>
+                        <SelectItem value="explanation" className="text-xs">Explanation</SelectItem>
+                        <SelectItem value="concept" className="text-xs">Key Points</SelectItem>
+                        <SelectItem value="question" className="text-xs">Question</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex items-start gap-3">
@@ -343,7 +373,7 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes }:
                         className="mt-1 shrink-0"
                       />
                     )}
-                    <div className="flex-1 min-w-0 pr-24">
+                    <div className="flex-1 min-w-0">
                       {/* AI summary */}
                       <div className="flex items-start gap-2 mb-3">
                         <div className="w-5 h-5 rounded bg-accent flex items-center justify-center shrink-0 mt-0.5">

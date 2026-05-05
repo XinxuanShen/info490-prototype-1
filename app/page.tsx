@@ -91,10 +91,26 @@ export default function Home() {
   }, [notes])
 
   const handleViewSource = useCallback((note: Note) => {
-    setHighlightedText(note.sourceText)
+    const sourceToFind = note.sourceTexts?.[0] || note.sourceText
+
+    if (!sourceToFind) return
+
+    setHighlightedText(sourceToFind)
     setTimeout(() => {
       setHighlightedText(null)
     }, 3000)
+  }, [])
+
+  const handleFootnoteClick = useCallback((noteId: string) => {
+    const noteEl = document.getElementById(`note-${noteId}`)
+    if (!noteEl) return
+
+    noteEl.scrollIntoView({ behavior: "smooth", block: "center" })
+    noteEl.classList.add("highlight-flash")
+
+    setTimeout(() => {
+      noteEl.classList.remove("highlight-flash")
+    }, 2000)
   }, [])
 
   const handleDeleteNote = useCallback((noteId: string) => {
@@ -104,6 +120,22 @@ export default function Home() {
   const handleDeleteNotes = useCallback((noteIds: string[]) => {
     const idsSet = new Set(noteIds)
     setNotes((prev) => prev.filter((n) => !idsSet.has(n.id)))
+  }, [])
+
+  const handleUpdateNoteLabels = useCallback((
+    noteId: string,
+    updates: Partial<Pick<Note, "taskType" | "importance">>
+  ) => {
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === noteId
+          ? {
+              ...note,
+              ...updates,
+            }
+          : note
+      )
+    )
   }, [])
 
   return (
@@ -134,6 +166,8 @@ export default function Home() {
             hoveredNote={hoveredNote}
             pendingSelections={pendingSelections}
             findOverlappingNote={findOverlappingNote}
+            notes={notes}
+            onFootnoteClick={handleFootnoteClick}
           />
         </div>
 
@@ -161,6 +195,7 @@ export default function Home() {
             onViewSource={handleViewSource}
             onDeleteNote={handleDeleteNote}
             onDeleteNotes={handleDeleteNotes}
+            onUpdateNoteLabels={handleUpdateNoteLabels}
             onHoverNote={setHoveredNote}
           />
         </div>

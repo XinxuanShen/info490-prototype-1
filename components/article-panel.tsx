@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useEffect, useState } from "react"
+import { useCallback, useRef, useEffect, useState, type ReactNode } from "react"
 import { FileText, Lightbulb, BookOpen, HelpCircle, Plus, X, RefreshCw, Upload } from "lucide-react"
 import type { TaskType, Note } from "@/app/page"
 
@@ -17,6 +17,8 @@ interface ArticlePanelProps {
   hoveredNote: Note | null
   pendingSelections: string[]
   findOverlappingNote: (texts: string[]) => Note | null
+  notes?: Note[]
+  onFootnoteClick?: (noteId: string) => void
 }
 
 interface ToolbarPosition {
@@ -123,6 +125,95 @@ async function parseDocx(file: File): Promise<ArticleBlock[]> {
   return parseTxt(result.value)
 }
 
+function inferTaskLabel(text: string): TaskType {
+  const trimmed = text.trim()
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length
+  const sentenceCount = trimmed.split(/[.!?]+/).filter((s) => s.trim().length > 0).length
+  const lower = ` ${trimmed.toLowerCase()} `
+
+  const hasDefinitionKeyword =
+    lower.includes(" is ") ||
+    lower.includes(" means ") ||
+    lower.includes(" refers to ")
+
+  if (wordCount > 200) return "summary"
+  if (sentenceCount > 3) return "concept"
+  if (hasDefinitionKeyword) return "explanation"
+  return "summary"
+}
+
+function deriveRuleBasedImportance(taskType: TaskType): "High" | "Medium" | "Low" {
+  if (taskType === "explanation") return "High"
+  if (taskType === "question") return "Low"
+  return "Medium"
+}
+
+function normalizeForMatch(text: string): string {
+  return text.replace(/\s+/g, " ").trim()
+}
+
+function renderTextWithInlineFootnotes(
+  content: string,
+  notes: Note[] = [],
+  onFootnoteClick?: (noteId: string) => void
+) {
+  const normalizedContent = normalizeForMatch(content)
+
+  const matches = notes
+    .flatMap((note, noteIndex) => {
+      const sourceTexts = note.sourceTexts?.length ? note.sourceTexts : [note.sourceText]
+      return sourceTexts.map((sourceText) => ({
+        note,
+        noteIndex,
+        sourceText,
+        normalizedSource: normalizeForMatch(sourceText),
+      }))
+    })
+    .filter(({ normalizedSource }) => normalizedSource.length > 0)
+    .map((match) => {
+      const start = normalizedContent.indexOf(match.normalizedSource)
+      return { ...match, start, end: start + match.normalizedSource.length }
+    })
+    .filter((match) => match.start !== -1)
+    .sort((a, b) => a.start - b.start || b.normalizedSource.length - a.normalizedSource.length)
+
+  if (matches.length === 0) return content
+
+  const parts: ReactNode[] = []
+  let cursor = 0
+
+  matches.forEach((match) => {
+    if (match.start < cursor) return
+
+    if (match.start > cursor) {
+      parts.push(content.slice(cursor, match.start))
+    }
+
+    parts.push(content.slice(match.start, match.end))
+    parts.push(
+      <sup
+        key={`${match.note.id}-${match.start}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          onFootnoteClick?.(match.note.id)
+        }}
+        className="ml-0.5 cursor-pointer rounded-full border border-blue-300 bg-blue-50 px-1 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+        title="View linked note"
+      >
+        {match.noteIndex + 1}
+      </sup>
+    )
+
+    cursor = match.end
+  })
+
+  if (cursor < content.length) {
+    parts.push(content.slice(cursor))
+  }
+
+  return parts
+}
+
 export function ArticlePanel({ 
   onHighlight, 
   onAddSelection,
@@ -131,7 +222,9 @@ export function ArticlePanel({
   highlightedText, 
   hoveredNote,
   pendingSelections,
-  findOverlappingNote
+  findOverlappingNote,
+  notes = [],
+  onFootnoteClick
 }: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -218,16 +311,20 @@ export function ArticlePanel({
       const rect = range.getBoundingClientRect()
       const articleRect = articleRef.current.getBoundingClientRect()
       
-      setSelectedText(text)
-      setToolbarPosition({
-        x: rect.left + rect.width / 2 - articleRect.left,
-        y: rect.top - articleRect.top + articleRef.current.scrollTop - 10
-      })
-      
-      const existing = findOverlappingNote([...(pendingSelections ?? []), text])
-      setOverlappingNote(existing)
+      const inferredTaskType = inferTaskLabel(text)
+
+      onHighlight(
+        text,
+        inferredTaskType,
+        deriveRuleBasedImportance(inferredTaskType)
+      )
+
+      setSelectedText(null)
+      setToolbarPosition(null)
+      setOverlappingNote(null)
+      window.getSelection()?.removeAllRanges()
     }
-  }, [findOverlappingNote, pendingSelections])
+  }, [articleRef, onHighlight])
 
   const handleTaskSelect = useCallback((taskType: TaskType) => {
     if (selectedText) {
@@ -435,7 +532,7 @@ export function ArticlePanel({
   const taskOptions: { type: TaskType; label: string; icon: React.ElementType }[] = [
     { type: "summary", label: "Summarize", icon: FileText },
     { type: "explanation", label: "Explain", icon: Lightbulb },
-    { type: "concept", label: "Key Concept", icon: BookOpen },
+    { type: "concept", label: "Key Points", icon: BookOpen },
     { type: "question", label: "Question", icon: HelpCircle },
   ]
 
@@ -589,9 +686,10 @@ export function ArticlePanel({
             return (
               <h1
                 key={index}
+                data-source-text
                 className="text-4xl font-bold text-foreground mb-6 tracking-tight"
               >
-                {block.content}
+                {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
               </h1>
             )
           }
@@ -600,9 +698,10 @@ export function ArticlePanel({
             return (
               <h2
                 key={index}
+                data-source-text
                 className="text-xl font-semibold text-foreground mt-10 mb-4 tracking-tight"
               >
-                {block.content}
+                {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
               </h2>
             )
           }
@@ -610,9 +709,10 @@ export function ArticlePanel({
           return (
             <p
               key={index}
+              data-source-text
               className="text-foreground/80 leading-relaxed mb-5 text-[15px] selection:bg-highlight"
             >
-              {block.content}
+              {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
             </p>
           )
         })
