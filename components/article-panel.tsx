@@ -69,6 +69,60 @@ const DEFAULT_CONTENT: ArticleBlock[] = [
   }
 ]
 
+// ── Helper: parse plain text ──────────────────────────────────────────────────
+function parseTxt(text: string): ArticleBlock[] {
+  return text
+    .split(/\n{2,}/)
+    .map((content) => content.trim())
+    .filter(Boolean)
+    .map((content) => ({
+      type: "paragraph" as const,
+      content,
+    }))
+}
+
+// ── Helper: parse PDF via pdfjs-dist (loaded dynamically) ────────────────────
+async function parsePdf(file: File): Promise<ArticleBlock[]> {
+  // Dynamic import so the heavy wasm bundle is only loaded on demand
+  const pdfjsLib = await import("pdfjs-dist")
+  // Point the worker at the CDN so we don't need a separate worker file
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url
+  ).toString()
+
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+
+  const paragraphs: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: any) => item.str ?? "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (pageText) paragraphs.push(pageText)
+  }
+
+  return paragraphs
+    .map((content) => content.trim())
+    .filter(Boolean)
+    .map((content) => ({
+      type: "paragraph" as const,
+      content,
+    }))
+}
+
+// ── Helper: parse DOCX via mammoth ───────────────────────────────────────────
+async function parseDocx(file: File): Promise<ArticleBlock[]> {
+  const mammoth = await import("mammoth")
+  const arrayBuffer = await file.arrayBuffer()
+  const result = await mammoth.extractRawText({ arrayBuffer })
+  return parseTxt(result.value)
+}
+
 export function ArticlePanel({ 
   onHighlight, 
   onAddSelection,
@@ -84,42 +138,62 @@ export function ArticlePanel({
   const [selectedText, setSelectedText] = useState<string | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
   const [overlappingNote, setOverlappingNote] = useState<Note | null>(null)
-  const [articleContent, setArticleContent] = useState<ArticleBlock[]>(DEFAULT_CONTENT)
+  const [articleContent, setArticleContent] = useState<ArticleBlock[]>([])
   const [fileName, setFileName] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [parseError, setParseError] = useState<string | null>(null)
 
   const safePendingSelections = pendingSelections ?? []
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── File upload handler (txt / pdf / docx) ──────────────────────────────
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !file.name.endsWith(".txt")) return
+    if (!file) return
+
+    const name = file.name.toLowerCase()
+    const isTxt  = name.endsWith(".txt")
+    const isPdf  = name.endsWith(".pdf")
+    const isDocx = name.endsWith(".docx")
+
+    if (!isTxt && !isPdf && !isDocx) {
+      setParseError("Unsupported file type. Please upload a .txt, .pdf, or .docx file.")
+      e.target.value = ""
+      return
+    }
 
     setFileName(file.name)
+    setIsLoading(true)
+    setParseError(null)
 
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const text = event.target?.result as string
-      const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean)
+    try {
+      let blocks: ArticleBlock[]
 
-      const blocks: ArticleBlock[] = lines.map((line, i) => {
-        if (i === 0) return { type: "heading", content: line }
-        // Heuristic: short lines (under 60 chars) that don't end with punctuation are subheadings
-        if (line.length < 60 && !/[.!?,;]$/.test(line)) {
-          return { type: "subheading", content: line }
-        }
-        return { type: "paragraph", content: line }
-      })
+      if (isTxt) {
+        const text = await file.text()
+        blocks = parseTxt(text)
+      } else if (isPdf) {
+        blocks = await parsePdf(file)
+      } else {
+        // .docx
+        blocks = await parseDocx(file)
+      }
 
-      setArticleContent(blocks)
+      setArticleContent(blocks.length ? blocks : DEFAULT_CONTENT)
+    } catch (err) {
+      console.error("File parse error:", err)
+      setParseError("Failed to parse file. Please try another file.")
+      setFileName(null)
+    } finally {
+      setIsLoading(false)
     }
-    reader.readAsText(file)
 
-    // Reset input so the same file can be re-uploaded if needed
     e.target.value = ""
   }, [])
 
   const handleResetContent = useCallback(() => {
     setArticleContent(DEFAULT_CONTENT)
     setFileName(null)
+    setParseError(null)
   }, [])
 
   const handleMouseUp = useCallback(() => {
@@ -468,15 +542,16 @@ export function ArticlePanel({
 
       <article className="max-w-2xl mx-auto">
         {/* File upload bar */}
-        <div className="mb-8 flex items-center gap-3">
+        <div className="mb-8 flex items-center gap-3 flex-wrap">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground border border-dashed border-border rounded-md hover:bg-muted/50 transition-colors"
+            disabled={isLoading}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground border border-dashed border-border rounded-md hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Upload className="h-3.5 w-3.5" />
-            Upload .txt file
+            {isLoading ? "Parsing…" : "Upload .txt, .pdf, or .docx"}
           </button>
-          {fileName && (
+          {fileName && !isLoading && (
             <>
               <span className="text-xs text-muted-foreground truncate max-w-[160px]" title={fileName}>
                 {fileName}
@@ -491,45 +566,57 @@ export function ArticlePanel({
               </button>
             </>
           )}
+          {parseError && (
+            <span className="text-xs text-destructive">{parseError}</span>
+          )}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt"
+            accept=".txt,.pdf,.docx"
             onChange={handleFileUpload}
             className="hidden"
           />
         </div>
 
-        {articleContent.map((block, index) => {
+        {articleContent.length === 0 ? (
+  <div className="flex h-full flex-col items-center justify-center text-gray-400">
+    <p className="text-lg font-medium">Please upload your file here</p>
+    <p className="mt-2 text-sm">Supports .txt, .pdf, and .docx</p>
+  </div>
+) : (
+        articleContent.map((block, index) => {
           if (block.type === "heading") {
             return (
-              <h1 
-                key={index} 
+              <h1
+                key={index}
                 className="text-4xl font-bold text-foreground mb-6 tracking-tight"
               >
                 {block.content}
               </h1>
             )
           }
+
           if (block.type === "subheading") {
             return (
-              <h2 
-                key={index} 
+              <h2
+                key={index}
                 className="text-xl font-semibold text-foreground mt-10 mb-4 tracking-tight"
               >
                 {block.content}
               </h2>
             )
           }
+
           return (
-            <p 
-              key={index} 
+            <p
+              key={index}
               className="text-foreground/80 leading-relaxed mb-5 text-[15px] selection:bg-highlight"
             >
               {block.content}
             </p>
           )
-        })}
+        })
+      )}
       </article>
     </div>
   )
