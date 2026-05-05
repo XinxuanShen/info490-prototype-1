@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useEffect, useState } from "react"
-import { FileText, Lightbulb, BookOpen, HelpCircle, Plus, X, RefreshCw } from "lucide-react"
+import { FileText, Lightbulb, BookOpen, HelpCircle, Plus, X, RefreshCw, Upload } from "lucide-react"
 import type { TaskType, Note } from "@/app/page"
 
 interface ArticlePanelProps {
@@ -24,7 +24,9 @@ interface ToolbarPosition {
   y: number
 }
 
-const articleContent = [
+type ArticleBlock = { type: string; content: string }
+
+const DEFAULT_CONTENT: ArticleBlock[] = [
   {
     type: "heading",
     content: "The Art of Deep Work"
@@ -78,11 +80,47 @@ export function ArticlePanel({
   findOverlappingNote
 }: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedText, setSelectedText] = useState<string | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
   const [overlappingNote, setOverlappingNote] = useState<Note | null>(null)
+  const [articleContent, setArticleContent] = useState<ArticleBlock[]>(DEFAULT_CONTENT)
+  const [fileName, setFileName] = useState<string | null>(null)
 
   const safePendingSelections = pendingSelections ?? []
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !file.name.endsWith(".txt")) return
+
+    setFileName(file.name)
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const text = event.target?.result as string
+      const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean)
+
+      const blocks: ArticleBlock[] = lines.map((line, i) => {
+        if (i === 0) return { type: "heading", content: line }
+        // Heuristic: short lines (under 60 chars) that don't end with punctuation are subheadings
+        if (line.length < 60 && !/[.!?,;]$/.test(line)) {
+          return { type: "subheading", content: line }
+        }
+        return { type: "paragraph", content: line }
+      })
+
+      setArticleContent(blocks)
+    }
+    reader.readAsText(file)
+
+    // Reset input so the same file can be re-uploaded if needed
+    e.target.value = ""
+  }, [])
+
+  const handleResetContent = useCallback(() => {
+    setArticleContent(DEFAULT_CONTENT)
+    setFileName(null)
+  }, [])
 
   const handleMouseUp = useCallback(() => {
     const selection = window.getSelection()
@@ -112,7 +150,6 @@ export function ArticlePanel({
         y: rect.top - articleRect.top + articleRef.current.scrollTop - 10
       })
       
-      // Check for overlapping notes
       const existing = findOverlappingNote([...(pendingSelections ?? []), text])
       setOverlappingNote(existing)
     }
@@ -182,7 +219,6 @@ export function ArticlePanel({
   useEffect(() => {
     if (!articleRef.current) return
 
-    // Clear all previous highlights
     const existingHighlights = articleRef.current.querySelectorAll(".active-highlight, .hover-highlight, .importance-high, .importance-medium")
     existingHighlights.forEach((el) => {
       const parent = el.parentNode
@@ -238,7 +274,6 @@ export function ArticlePanel({
       }
     })
 
-    // Also highlight important sentences if hovering
     if (isHover && hoveredNote?.importantSentences) {
       hoveredNote.importantSentences.forEach((sentence) => {
         if (!articleRef.current) return
@@ -281,7 +316,6 @@ export function ArticlePanel({
     if (!safePendingSelections.length) return
     if (!articleRef.current) return
     
-    // Clear pending highlights
     const existingPending = articleRef.current.querySelectorAll(".pending-highlight")
     existingPending.forEach((el) => {
       const parent = el.parentNode
@@ -376,7 +410,6 @@ export function ArticlePanel({
           }}
         >
           <div className="bg-foreground text-background rounded-lg shadow-lg overflow-hidden">
-            {/* Update existing note option */}
             {overlappingNote && (
               <>
                 <div className="px-3 py-2 bg-background/10 border-b border-background/20">
@@ -403,9 +436,7 @@ export function ArticlePanel({
               </>
             )}
             
-            {/* Main action buttons */}
             <div className="flex">
-              {/* Add to multi-select button */}
               <button
                 onClick={handleAddToMulti}
                 className="flex items-center gap-1.5 px-2.5 py-2 text-xs font-medium hover:bg-background/10 transition-colors border-r border-background/20"
@@ -436,6 +467,39 @@ export function ArticlePanel({
       )}
 
       <article className="max-w-2xl mx-auto">
+        {/* File upload bar */}
+        <div className="mb-8 flex items-center gap-3">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-muted-foreground border border-dashed border-border rounded-md hover:bg-muted/50 transition-colors"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload .txt file
+          </button>
+          {fileName && (
+            <>
+              <span className="text-xs text-muted-foreground truncate max-w-[160px]" title={fileName}>
+                {fileName}
+              </span>
+              <button
+                onClick={handleResetContent}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                title="Reset to default article"
+              >
+                <X className="h-3 w-3" />
+                Reset
+              </button>
+            </>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+        </div>
+
         {articleContent.map((block, index) => {
           if (block.type === "heading") {
             return (
