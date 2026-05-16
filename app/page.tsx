@@ -7,7 +7,6 @@ import { FileText, PanelRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export type TaskType = "summary" | "explanation" | "concept" | "question"
-export type ImportanceLevel = "High" | "Medium" | "Low"
 
 export interface ImportantSentence {
   text: string
@@ -20,17 +19,9 @@ export interface Note {
   sourceTexts: string[]
   summary: string
   taskType: TaskType
-  importance: ImportanceLevel
   createdAt: Date
   importantSentences?: ImportantSentence[]
-}
-
-function deriveImportance(text: string, taskType: TaskType): ImportanceLevel {
-  const wordCount = text.trim().split(/\s+/).length
-  if (taskType === "summary" && wordCount >= 20) return "High"
-  if (taskType === "explanation") return "High"
-  if (wordCount <= 8) return "Low"
-  return "Medium"
+  articlePosition: number // character offset of the source text in the article
 }
 
 export default function Home() {
@@ -39,8 +30,11 @@ export default function Home() {
   const [hoveredNote, setHoveredNote] = useState<Note | null>(null)
   const [pendingSelections, setPendingSelections] = useState<string[]>([])
   const [isPanelOpen, setIsPanelOpen] = useState(true)
+  // articleContent is managed in ArticlePanel but we keep a flat text snapshot
+  // so NotesPanel can compute article-position ordering
+  const [articleFullText, setArticleFullText] = useState<string>("")
 
-  const handleHighlight = useCallback((text: string, taskType: TaskType) => {
+  const handleHighlight = useCallback((text: string, taskType: TaskType, position: number) => {
     const sourceTexts = pendingSelections.length > 0 ? [...pendingSelections, text] : [text]
 
     const newNote: Note = {
@@ -49,12 +43,12 @@ export default function Home() {
       sourceTexts,
       summary: "",
       taskType,
-      importance: deriveImportance(text, taskType),
       createdAt: new Date(),
       importantSentences: [],
+      articlePosition: position,
     }
 
-    setNotes((prev) => [newNote, ...prev])
+    setNotes((prev) => [...prev, newNote])
     setPendingSelections([])
   }, [pendingSelections])
 
@@ -66,7 +60,7 @@ export default function Home() {
     setPendingSelections([])
   }, [])
 
-  const handleUpdateNote = useCallback((noteId: string, newText: string, taskType: TaskType) => {
+  const handleUpdateNote = useCallback((noteId: string, newText: string, taskType: TaskType, position: number) => {
     setNotes((prev) =>
       prev.map((note) =>
         note.id === noteId
@@ -75,7 +69,7 @@ export default function Home() {
               sourceText: `${note.sourceText} ${newText}`.trim(),
               sourceTexts: [...(note.sourceTexts ?? [note.sourceText]), newText],
               taskType,
-              importance: deriveImportance(newText, taskType),
+              articlePosition: Math.min(note.articlePosition, position),
             }
           : note
       )
@@ -92,9 +86,7 @@ export default function Home() {
 
   const handleViewSource = useCallback((note: Note) => {
     const sourceToFind = note.sourceTexts?.[0] || note.sourceText
-
     if (!sourceToFind) return
-
     setHighlightedText(sourceToFind)
     setTimeout(() => {
       setHighlightedText(null)
@@ -104,10 +96,8 @@ export default function Home() {
   const handleFootnoteClick = useCallback((noteId: string) => {
     const noteEl = document.getElementById(`note-${noteId}`)
     if (!noteEl) return
-
     noteEl.scrollIntoView({ behavior: "smooth", block: "center" })
     noteEl.classList.add("highlight-flash")
-
     setTimeout(() => {
       noteEl.classList.remove("highlight-flash")
     }, 2000)
@@ -124,16 +114,11 @@ export default function Home() {
 
   const handleUpdateNoteLabels = useCallback((
     noteId: string,
-    updates: Partial<Pick<Note, "taskType" | "importance">>
+    updates: Partial<Pick<Note, "taskType">>
   ) => {
     setNotes((prev) =>
       prev.map((note) =>
-        note.id === noteId
-          ? {
-              ...note,
-              ...updates,
-            }
-          : note
+        note.id === noteId ? { ...note, ...updates } : note
       )
     )
   }, [])
@@ -168,6 +153,7 @@ export default function Home() {
             findOverlappingNote={findOverlappingNote}
             notes={notes}
             onFootnoteClick={handleFootnoteClick}
+            onArticleTextChange={setArticleFullText}
           />
         </div>
 
@@ -192,6 +178,7 @@ export default function Home() {
           </div>
           <NotesPanel
             notes={notes}
+            articleFullText={articleFullText}
             onViewSource={handleViewSource}
             onDeleteNote={handleDeleteNote}
             onDeleteNotes={handleDeleteNotes}

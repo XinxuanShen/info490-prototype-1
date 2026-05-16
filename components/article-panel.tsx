@@ -8,17 +8,18 @@ interface ArticlePanelProps {
   onHighlight: (
     text: string,
     taskType: TaskType,
-    importance: "High" | "Medium" | "Low"
+    position: number
   ) => void
   onAddSelection: (text: string) => void
   onClearSelections: () => void
-  onUpdateNote: (noteId: string, newText: string, taskType: TaskType) => void
+  onUpdateNote: (noteId: string, newText: string, taskType: TaskType, position: number) => void
   highlightedText: string | null
   hoveredNote: Note | null
   pendingSelections: string[]
   findOverlappingNote: (texts: string[]) => Note | null
   notes?: Note[]
   onFootnoteClick?: (noteId: string) => void
+  onArticleTextChange?: (text: string) => void
 }
 
 interface ToolbarPosition {
@@ -71,7 +72,6 @@ const DEFAULT_CONTENT: ArticleBlock[] = [
   }
 ]
 
-// ── Helper: parse plain text ──────────────────────────────────────────────────
 function parseTxt(text: string): ArticleBlock[] {
   return text
     .split(/\n{2,}/)
@@ -83,15 +83,14 @@ function parseTxt(text: string): ArticleBlock[] {
     }))
 }
 
-// ── Helper: parse PDF via pdfjs-dist (loaded dynamically) ────────────────────
 async function parsePdf(file: File): Promise<ArticleBlock[]> {
-  // Dynamic import so the heavy wasm bundle is only loaded on demand
   const pdfjsLib = await import("pdfjs-dist")
-  // Point the worker at the CDN so we don't need a separate worker file
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url
-  ).toString()
+  // pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  //   "pdfjs-dist/build/pdf.worker.min.mjs",
+  //   import.meta.url
+  // ).toString()
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
@@ -117,7 +116,6 @@ async function parsePdf(file: File): Promise<ArticleBlock[]> {
     }))
 }
 
-// ── Helper: parse DOCX via mammoth ───────────────────────────────────────────
 async function parseDocx(file: File): Promise<ArticleBlock[]> {
   const mammoth = await import("mammoth")
   const arrayBuffer = await file.arrayBuffer()
@@ -142,29 +140,33 @@ function inferTaskLabel(text: string): TaskType {
   return "summary"
 }
 
-function deriveRuleBasedImportance(taskType: TaskType): "High" | "Medium" | "Low" {
-  if (taskType === "explanation") return "High"
-  if (taskType === "question") return "Low"
-  return "Medium"
-}
-
 function normalizeForMatch(text: string): string {
   return text.replace(/\s+/g, " ").trim()
+}
+
+/** Returns the character offset of `needle` within the concatenated article text */
+function getArticlePosition(needle: string, articleBlocks: ArticleBlock[]): number {
+  const fullText = articleBlocks.map((b) => b.content).join("\n")
+  const normalized = normalizeForMatch(needle)
+  const idx = fullText.indexOf(normalized)
+  return idx === -1 ? fullText.length : idx
 }
 
 function renderTextWithInlineFootnotes(
   content: string,
   notes: Note[] = [],
+  // noteIndex here is the display order index (0-based, sorted by article position)
+  sortedNotes: Note[],
   onFootnoteClick?: (noteId: string) => void
 ) {
   const normalizedContent = normalizeForMatch(content)
 
-  const matches = notes
-    .flatMap((note, noteIndex) => {
+  const matches = sortedNotes
+    .flatMap((note, sortedIndex) => {
       const sourceTexts = note.sourceTexts?.length ? note.sourceTexts : [note.sourceText]
       return sourceTexts.map((sourceText) => ({
         note,
-        noteIndex,
+        sortedIndex,
         sourceText,
         normalizedSource: normalizeForMatch(sourceText),
       }))
@@ -200,7 +202,7 @@ function renderTextWithInlineFootnotes(
         className="ml-0.5 cursor-pointer rounded-full border border-blue-300 bg-blue-50 px-1 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
         title="View linked note"
       >
-        {match.noteIndex + 1}
+        {match.sortedIndex + 1}
       </sup>
     )
 
@@ -224,21 +226,30 @@ export function ArticlePanel({
   pendingSelections,
   findOverlappingNote,
   notes = [],
-  onFootnoteClick
+  onFootnoteClick,
+  onArticleTextChange,
 }: ArticlePanelProps) {
   const articleRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedText, setSelectedText] = useState<string | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
   const [overlappingNote, setOverlappingNote] = useState<Note | null>(null)
-  const [articleContent, setArticleContent] = useState<ArticleBlock[]>([])
+  const [articleContent, setArticleContent] = useState<ArticleBlock[]>(DEFAULT_CONTENT)
   const [fileName, setFileName] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
 
+  // Notify parent whenever article content changes
+  useEffect(() => {
+    const fullText = articleContent.map((b) => b.content).join("\n")
+    onArticleTextChange?.(fullText)
+  }, [articleContent, onArticleTextChange])
+
+  // Notes sorted by article position for stable footnote numbering
+  const sortedNotes = [...notes].sort((a, b) => a.articlePosition - b.articlePosition)
+
   const safePendingSelections = pendingSelections ?? []
 
-  // ── File upload handler (txt / pdf / docx) ──────────────────────────────
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -267,7 +278,6 @@ export function ArticlePanel({
       } else if (isPdf) {
         blocks = await parsePdf(file)
       } else {
-        // .docx
         blocks = await parseDocx(file)
       }
 
@@ -308,51 +318,39 @@ export function ArticlePanel({
 
     const range = selection.getRangeAt(0)
     if (articleRef.current?.contains(range.commonAncestorContainer)) {
-      const rect = range.getBoundingClientRect()
-      const articleRect = articleRef.current.getBoundingClientRect()
-      
       const inferredTaskType = inferTaskLabel(text)
+      const position = getArticlePosition(text, articleContent)
 
-      onHighlight(
-        text,
-        inferredTaskType,
-        deriveRuleBasedImportance(inferredTaskType)
-      )
+      onHighlight(text, inferredTaskType, position)
 
       setSelectedText(null)
       setToolbarPosition(null)
       setOverlappingNote(null)
       window.getSelection()?.removeAllRanges()
     }
-  }, [articleRef, onHighlight])
+  }, [articleRef, onHighlight, articleContent])
 
   const handleTaskSelect = useCallback((taskType: TaskType) => {
     if (selectedText) {
-      onHighlight(
-        selectedText,
-        taskType,
-        taskType === "explanation"
-          ? "High"
-          : taskType === "question"
-          ? "Low"
-          : "Medium"
-      )
+      const position = getArticlePosition(selectedText, articleContent)
+      onHighlight(selectedText, taskType, position)
       setSelectedText(null)
       setToolbarPosition(null)
       setOverlappingNote(null)
       window.getSelection()?.removeAllRanges()
     }
-  }, [selectedText, onHighlight])
+  }, [selectedText, onHighlight, articleContent])
 
   const handleUpdateExisting = useCallback((taskType: TaskType) => {
     if (selectedText && overlappingNote) {
-      onUpdateNote(overlappingNote.id, selectedText, taskType)
+      const position = getArticlePosition(selectedText, articleContent)
+      onUpdateNote(overlappingNote.id, selectedText, taskType, position)
       setSelectedText(null)
       setToolbarPosition(null)
       setOverlappingNote(null)
       window.getSelection()?.removeAllRanges()
     }
-  }, [selectedText, overlappingNote, onUpdateNote])
+  }, [selectedText, overlappingNote, onUpdateNote, articleContent])
 
   const handleAddToMulti = useCallback(() => {
     if (selectedText) {
@@ -676,47 +674,47 @@ export function ArticlePanel({
         </div>
 
         {articleContent.length === 0 ? (
-  <div className="flex h-full flex-col items-center justify-center text-gray-400">
-    <p className="text-lg font-medium">Please upload your file here</p>
-    <p className="mt-2 text-sm">Supports .txt, .pdf, and .docx</p>
-  </div>
-) : (
-        articleContent.map((block, index) => {
-          if (block.type === "heading") {
+          <div className="flex h-full flex-col items-center justify-center text-gray-400">
+            <p className="text-lg font-medium">Please upload your file here</p>
+            <p className="mt-2 text-sm">Supports .txt, .pdf, and .docx</p>
+          </div>
+        ) : (
+          articleContent.map((block, index) => {
+            if (block.type === "heading") {
+              return (
+                <h1
+                  key={index}
+                  data-source-text
+                  className="text-4xl font-bold text-foreground mb-6 tracking-tight"
+                >
+                  {renderTextWithInlineFootnotes(block.content, notes, sortedNotes, onFootnoteClick)}
+                </h1>
+              )
+            }
+
+            if (block.type === "subheading") {
+              return (
+                <h2
+                  key={index}
+                  data-source-text
+                  className="text-xl font-semibold text-foreground mt-10 mb-4 tracking-tight"
+                >
+                  {renderTextWithInlineFootnotes(block.content, notes, sortedNotes, onFootnoteClick)}
+                </h2>
+              )
+            }
+
             return (
-              <h1
+              <p
                 key={index}
                 data-source-text
-                className="text-4xl font-bold text-foreground mb-6 tracking-tight"
+                className="text-foreground/80 leading-relaxed mb-5 text-[15px] selection:bg-highlight"
               >
-                {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
-              </h1>
+                {renderTextWithInlineFootnotes(block.content, notes, sortedNotes, onFootnoteClick)}
+              </p>
             )
-          }
-
-          if (block.type === "subheading") {
-            return (
-              <h2
-                key={index}
-                data-source-text
-                className="text-xl font-semibold text-foreground mt-10 mb-4 tracking-tight"
-              >
-                {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
-              </h2>
-            )
-          }
-
-          return (
-            <p
-              key={index}
-              data-source-text
-              className="text-foreground/80 leading-relaxed mb-5 text-[15px] selection:bg-highlight"
-            >
-              {renderTextWithInlineFootnotes(block.content, notes, onFootnoteClick)}
-            </p>
-          )
-        })
-      )}
+          })
+        )}
       </article>
     </div>
   )

@@ -10,15 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb, ArrowUpDown } from "lucide-react"
+import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb, Download, Network } from "lucide-react"
 
 type TaskType = "summary" | "explanation" | "concept" | "question"
-type ImportanceLevel = "High" | "Medium" | "Low"
-type SortOption =
-  | "created-newest"
-  | "created-oldest"
-  | "importance-high"
-  | "importance-low"
 
 interface Note {
   id: string
@@ -26,26 +20,21 @@ interface Note {
   sourceTexts?: string[]
   summary: string
   taskType: TaskType
-  importance: ImportanceLevel
   createdAt: Date
+  articlePosition: number
 }
 
 interface NotesPanelProps {
   notes: Note[]
+  articleFullText?: string
   onViewSource: (note: Note) => void
   onDeleteNote: (noteId: string) => void
   onDeleteNotes: (noteIds: string[]) => void
   onUpdateNoteLabels: (
     noteId: string,
-    updates: Partial<Pick<Note, "taskType" | "importance">>
+    updates: Partial<Pick<Note, "taskType">>
   ) => void
   onHoverNote?: (note: Note | null) => void
-}
-
-const IMPORTANCE_ORDER: Record<ImportanceLevel, number> = {
-  High: 0,
-  Medium: 1,
-  Low: 2,
 }
 
 const TASK_TYPE_STYLES: Record<TaskType, string> = {
@@ -53,12 +42,6 @@ const TASK_TYPE_STYLES: Record<TaskType, string> = {
   explanation: "bg-amber-50 text-amber-600",
   concept: "bg-purple-50 text-purple-600",
   question: "bg-rose-50 text-rose-600",
-}
-
-const IMPORTANCE_STYLES: Record<ImportanceLevel, string> = {
-  High: "bg-red-50 text-red-600 ring-1 ring-red-200",
-  Medium: "bg-amber-50 text-amber-600 ring-1 ring-amber-200",
-  Low: "bg-green-50 text-green-600 ring-1 ring-green-200",
 }
 
 const fakeSummaries: Record<TaskType, string[]> = {
@@ -96,35 +79,131 @@ function formatRelativeTime(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
-export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, onUpdateNoteLabels, onHoverNote }: NotesPanelProps) {
+function getFakeSummary(note: Note, index: number): string {
+  const summaries = fakeSummaries[note.taskType] ?? fakeSummaries.summary
+  return summaries[index % summaries.length]
+}
+
+// ── Mind Map placeholder ─────────────────────────────────────────────────────
+function MindMapPlaceholder() {
+  return (
+    <div className="mx-4 mb-4 rounded-lg border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
+        <Network className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium text-foreground">Mind Map Overview</span>
+        <span className="ml-auto text-[10px] text-muted-foreground italic">concept preview</span>
+      </div>
+      <div className="p-3">
+        <svg viewBox="0 0 320 200" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+          {/* Center node */}
+          <ellipse cx="160" cy="100" rx="44" ry="22" fill="#1a1a1a" />
+          <text x="160" y="104" textAnchor="middle" fill="white" fontSize="9" fontWeight="600">Deep Work</text>
+
+          {/* Branch lines */}
+          <line x1="116" y1="100" x2="60" y2="60" stroke="#d4d4d4" strokeWidth="1.5" />
+          <line x1="116" y1="100" x2="55" y2="140" stroke="#d4d4d4" strokeWidth="1.5" />
+          <line x1="204" y1="100" x2="262" y2="58" stroke="#d4d4d4" strokeWidth="1.5" />
+          <line x1="204" y1="100" x2="265" y2="142" stroke="#d4d4d4" strokeWidth="1.5" />
+          <line x1="160" y1="78" x2="160" y2="32" stroke="#d4d4d4" strokeWidth="1.5" />
+
+          {/* Satellite nodes */}
+          <ellipse cx="52" cy="54" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="52" y="58" textAnchor="middle" fill="#404040" fontSize="7.5">Myelination</text>
+
+          <ellipse cx="46" cy="144" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="46" y="148" textAnchor="middle" fill="#404040" fontSize="7.5">Focus Skills</text>
+
+          <ellipse cx="272" cy="52" rx="40" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="272" y="56" textAnchor="middle" fill="#404040" fontSize="7.5">Philosophies</text>
+
+          <ellipse cx="275" cy="146" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="275" y="150" textAnchor="middle" fill="#404040" fontSize="7.5">Avoid Distract.</text>
+
+          <ellipse cx="160" cy="22" rx="40" ry="16" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="160" y="26" textAnchor="middle" fill="#404040" fontSize="7.5">Economy Value</text>
+
+          {/* Sub-branch lines */}
+          <line x1="52" y1="72" x2="28" y2="96" stroke="#e5e5e5" strokeWidth="1" />
+          <ellipse cx="20" cy="106" rx="22" ry="12" fill="#fafafa" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="20" y="110" textAnchor="middle" fill="#737373" fontSize="6.5">Neurons</text>
+
+          <line x1="272" y1="70" x2="298" y2="92" stroke="#e5e5e5" strokeWidth="1" />
+          <ellipse cx="305" cy="102" rx="20" ry="12" fill="#fafafa" stroke="#e5e5e5" strokeWidth="1" />
+          <text x="305" y="106" textAnchor="middle" fill="#737373" fontSize="6.5">Monastic</text>
+        </svg>
+        <p className="text-[10px] text-muted-foreground text-center mt-1">
+          Relationships between key concepts in the article
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Export helpers ───────────────────────────────────────────────────────────
+function exportNotes(notes: Note[], sortedNotes: Note[]): void {
+  const lines: string[] = [
+    "# Article Notes Export",
+    `Exported: ${new Date().toLocaleString()}`,
+    `Total notes: ${sortedNotes.length}`,
+    "",
+    "---",
+    "",
+  ]
+
+  sortedNotes.forEach((note, idx) => {
+    const summary = getFakeSummary(note, idx)
+    const taskLabel =
+      note.taskType === "summary" ? "Summary"
+      : note.taskType === "explanation" ? "Explanation"
+      : note.taskType === "concept" ? "Key Points"
+      : "Question"
+
+    lines.push(`## Note ${idx + 1} — ${taskLabel}`)
+    lines.push("")
+    lines.push(`**AI Note:** ${summary}`)
+    lines.push("")
+    lines.push(`**Source excerpt:** "${note.sourceText}"`)
+    lines.push("")
+    lines.push(`*Added: ${formatRelativeTime(note.createdAt)}*`)
+    lines.push("")
+    lines.push("---")
+    lines.push("")
+  })
+
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `article-notes-${Date.now()}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+export function NotesPanel({
+  notes,
+  articleFullText,
+  onViewSource,
+  onDeleteNote,
+  onDeleteNotes,
+  onUpdateNoteLabels,
+  onHoverNote,
+}: NotesPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isSelecting, setIsSelecting] = useState(false)
-  const [sortOption, setSortOption] = useState<SortOption>("created-newest")
   const [filterType, setFilterType] = useState<TaskType | "all">("all")
 
+  // Always sort by article position (stable, never reshuffles)
+  const sortedNotes = useMemo(
+    () => [...notes].sort((a, b) => a.articlePosition - b.articlePosition),
+    [notes]
+  )
+
   const filteredNotes = useMemo(() => {
-  if (filterType === "all") return notes
-  return notes.filter((n) => n.taskType === filterType)
-}, [notes, filterType])
-
-  const sortedNotes = useMemo(() => {
-    const copy = [...filteredNotes]
-
-    switch (sortOption) {
-      case "created-newest":
-        return copy.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      case "created-oldest":
-        return copy.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      case "importance-high":
-        return copy.sort(
-          (a, b) => IMPORTANCE_ORDER[a.importance] - IMPORTANCE_ORDER[b.importance]
-        )
-      case "importance-low":
-        return copy.sort(
-          (a, b) => IMPORTANCE_ORDER[b.importance] - IMPORTANCE_ORDER[a.importance]
-        )
-    }
-  }, [filteredNotes, sortOption])
+    if (filterType === "all") return sortedNotes
+    return sortedNotes.filter((n) => n.taskType === filterType)
+  }, [sortedNotes, filterType])
 
   const toggleSelect = (noteId: string) => {
     setSelectedIds((prev) => {
@@ -153,37 +232,22 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
 
   const getTaskLabel = (taskType: TaskType) => {
     switch (taskType) {
-      case "summary":
-        return "Summary"
-      case "explanation":
-        return "Explanation"
-      case "concept":
-        return "Key Points"
-      case "question":
-        return "Question"
-      default:
-        return "Summary"
+      case "summary": return "Summary"
+      case "explanation": return "Explanation"
+      case "concept": return "Key Points"
+      case "question": return "Question"
+      default: return "Summary"
     }
   }
 
   const getTaskIcon = (taskType: TaskType) => {
     switch (taskType) {
-      case "summary":
-        return FileText
-      case "explanation":
-        return Lightbulb
-      case "concept":
-        return Sparkles
-      case "question":
-        return FileText
-      default:
-        return FileText
+      case "summary": return FileText
+      case "explanation": return Lightbulb
+      case "concept": return Sparkles
+      case "question": return FileText
+      default: return FileText
     }
-  }
-
-  const getFakeSummary = (note: Note, index: number) => {
-    const summaries = fakeSummaries[note.taskType] ?? fakeSummaries.summary
-    return summaries[index % summaries.length]
   }
 
   return (
@@ -198,52 +262,36 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
               {notes.length}
             </span>
           </div>
-          {notes.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsSelecting(!isSelecting)}
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {isSelecting ? "Done" : "Select"}
-            </Button>
-          )}
-        </div>
-
-        {/* Sort control */}
-        {notes.length > 0 && (
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <Select
-              value={sortOption}
-              onValueChange={(v) => setSortOption(v as SortOption)}
-            >
-              <SelectTrigger className="h-7 text-xs border-border bg-background shadow-none w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="created-newest" className="text-xs">
-                  Newest First
-                </SelectItem>
-                <SelectItem value="created-oldest" className="text-xs">
-                  Oldest First
-                </SelectItem>
-                <SelectItem value="importance-high" className="text-xs">
-                  Importance: High → Low
-                </SelectItem>
-                <SelectItem value="importance-low" className="text-xs">
-                  Importance: Low → High
-                </SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-1">
+            {notes.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => exportNotes(notes, sortedNotes)}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                title="Export notes as Markdown"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </Button>
+            )}
+            {notes.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsSelecting(!isSelecting)}
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {isSelecting ? "Done" : "Select"}
+              </Button>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Filter by type */}
         {notes.length > 0 && (
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Filter:</span>
-
             <Select
               value={filterType}
               onValueChange={(v) => setFilterType(v as TaskType | "all")}
@@ -255,7 +303,7 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
                 <SelectItem value="all" className="text-xs">All</SelectItem>
                 <SelectItem value="summary" className="text-xs">Summary</SelectItem>
                 <SelectItem value="explanation" className="text-xs">Explanation</SelectItem>
-                <SelectItem value="concept" className="text-xs">Concept</SelectItem>
+                <SelectItem value="concept" className="text-xs">Key Points</SelectItem>
                 <SelectItem value="question" className="text-xs">Question</SelectItem>
               </SelectContent>
             </Select>
@@ -299,10 +347,13 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
         )}
       </div>
 
+      {/* Mind Map Section — always shown */}
+      <MindMapPlaceholder />
+
       {/* Notes list */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {sortedNotes.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-6">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
+        {filteredNotes.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
               <Sparkles className="h-5 w-5 text-muted-foreground" />
             </div>
@@ -313,7 +364,7 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
           </div>
         ) : (
           <div className="space-y-3">
-            {sortedNotes.map((note, index) => {
+            {filteredNotes.map((note, index) => {
               const TaskIcon = getTaskIcon(note.taskType)
               return (
                 <div
@@ -325,26 +376,8 @@ export function NotesPanel({ notes, onViewSource, onDeleteNote, onDeleteNotes, o
                     selectedIds.has(note.id) ? "ring-2 ring-primary/20 border-primary/30" : ""
                   }`}
                 >
-                  {/* Editable labels row */}
+                  {/* Task type label row */}
                   <div className="flex items-center justify-end gap-1.5 mb-3">
-                    <Select
-                      value={note.importance}
-                      onValueChange={(value) =>
-                        onUpdateNoteLabels(note.id, { importance: value as ImportanceLevel })
-                      }
-                    >
-                      <SelectTrigger
-                        className={`h-7 w-[72px] px-2 text-[10px] font-semibold tracking-wide border-0 shadow-none ${IMPORTANCE_STYLES[note.importance]}`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="High" className="text-xs">High</SelectItem>
-                        <SelectItem value="Medium" className="text-xs">Medium</SelectItem>
-                        <SelectItem value="Low" className="text-xs">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
-
                     <Select
                       value={note.taskType}
                       onValueChange={(value) =>
