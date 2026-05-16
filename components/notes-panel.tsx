@@ -1,16 +1,10 @@
 "use client"
 
+import Image from "next/image"
 import { useState, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb, Download, Network } from "lucide-react"
+import { FileText, Sparkles, ExternalLink, Trash2, X, Lightbulb, Download } from "lucide-react"
 
 type TaskType = "summary" | "explanation" | "concept" | "question"
 
@@ -84,60 +78,6 @@ function getFakeSummary(note: Note, index: number): string {
   return summaries[index % summaries.length]
 }
 
-// ── Mind Map placeholder ─────────────────────────────────────────────────────
-function MindMapPlaceholder() {
-  return (
-    <div className="mx-4 mb-4 rounded-lg border border-border bg-card overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
-        <Network className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-foreground">Mind Map Overview</span>
-        <span className="ml-auto text-[10px] text-muted-foreground italic">concept preview</span>
-      </div>
-      <div className="p-3">
-        <svg viewBox="0 0 320 200" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
-          {/* Center node */}
-          <ellipse cx="160" cy="100" rx="44" ry="22" fill="#1a1a1a" />
-          <text x="160" y="104" textAnchor="middle" fill="white" fontSize="9" fontWeight="600">Deep Work</text>
-
-          {/* Branch lines */}
-          <line x1="116" y1="100" x2="60" y2="60" stroke="#d4d4d4" strokeWidth="1.5" />
-          <line x1="116" y1="100" x2="55" y2="140" stroke="#d4d4d4" strokeWidth="1.5" />
-          <line x1="204" y1="100" x2="262" y2="58" stroke="#d4d4d4" strokeWidth="1.5" />
-          <line x1="204" y1="100" x2="265" y2="142" stroke="#d4d4d4" strokeWidth="1.5" />
-          <line x1="160" y1="78" x2="160" y2="32" stroke="#d4d4d4" strokeWidth="1.5" />
-
-          {/* Satellite nodes */}
-          <ellipse cx="52" cy="54" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="52" y="58" textAnchor="middle" fill="#404040" fontSize="7.5">Myelination</text>
-
-          <ellipse cx="46" cy="144" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="46" y="148" textAnchor="middle" fill="#404040" fontSize="7.5">Focus Skills</text>
-
-          <ellipse cx="272" cy="52" rx="40" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="272" y="56" textAnchor="middle" fill="#404040" fontSize="7.5">Philosophies</text>
-
-          <ellipse cx="275" cy="146" rx="38" ry="18" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="275" y="150" textAnchor="middle" fill="#404040" fontSize="7.5">Avoid Distract.</text>
-
-          <ellipse cx="160" cy="22" rx="40" ry="16" fill="#f5f5f5" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="160" y="26" textAnchor="middle" fill="#404040" fontSize="7.5">Economy Value</text>
-
-          {/* Sub-branch lines */}
-          <line x1="52" y1="72" x2="28" y2="96" stroke="#e5e5e5" strokeWidth="1" />
-          <ellipse cx="20" cy="106" rx="22" ry="12" fill="#fafafa" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="20" y="110" textAnchor="middle" fill="#737373" fontSize="6.5">Neurons</text>
-
-          <line x1="272" y1="70" x2="298" y2="92" stroke="#e5e5e5" strokeWidth="1" />
-          <ellipse cx="305" cy="102" rx="20" ry="12" fill="#fafafa" stroke="#e5e5e5" strokeWidth="1" />
-          <text x="305" y="106" textAnchor="middle" fill="#737373" fontSize="6.5">Monastic</text>
-        </svg>
-        <p className="text-[10px] text-muted-foreground text-center mt-1">
-          Relationships between key concepts in the article
-        </p>
-      </div>
-    </div>
-  )
-}
 
 // ── Export helpers ───────────────────────────────────────────────────────────
 function exportNotes(notes: Note[], sortedNotes: Note[]): void {
@@ -193,6 +133,7 @@ export function NotesPanel({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isSelecting, setIsSelecting] = useState(false)
   const [filterType, setFilterType] = useState<TaskType | "all">("all")
+  const [showMindMap, setShowMindMap] = useState(false)
 
   // Always sort by article position (stable, never reshuffles)
   const sortedNotes = useMemo(
@@ -263,6 +204,14 @@ export function NotesPanel({
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowMindMap(true)}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+            >
+              Mind Map
+            </Button>
             {notes.length > 0 && (
               <Button
                 variant="ghost"
@@ -292,21 +241,17 @@ export function NotesPanel({
         {notes.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Filter:</span>
-            <Select
+<select
               value={filterType}
-              onValueChange={(v) => setFilterType(v as TaskType | "all")}
+              onChange={(e) => setFilterType(e.target.value as TaskType | "all")}
+              className="h-7 rounded-md border border-border bg-background px-2 text-xs"
             >
-              <SelectTrigger className="h-7 text-xs border border-border bg-background px-2">
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">All</SelectItem>
-                <SelectItem value="summary" className="text-xs">Summary</SelectItem>
-                <SelectItem value="explanation" className="text-xs">Explanation</SelectItem>
-                <SelectItem value="concept" className="text-xs">Key Points</SelectItem>
-                <SelectItem value="question" className="text-xs">Question</SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="all">All</option>
+              <option value="summary">Summary</option>
+              <option value="explanation">Explanation</option>
+              <option value="concept">Key Points</option>
+              <option value="question">Question</option>
+            </select>
           </div>
         )}
 
@@ -347,8 +292,6 @@ export function NotesPanel({
         )}
       </div>
 
-      {/* Mind Map Section — always shown */}
-      <MindMapPlaceholder />
 
       {/* Notes list */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
@@ -378,24 +321,18 @@ export function NotesPanel({
                 >
                   {/* Task type label row */}
                   <div className="flex items-center justify-end gap-1.5 mb-3">
-                    <Select
+<select
                       value={note.taskType}
-                      onValueChange={(value) =>
-                        onUpdateNoteLabels(note.id, { taskType: value as TaskType })
+                      onChange={(e) =>
+                        onUpdateNoteLabels(note.id, { taskType: e.target.value as TaskType })
                       }
+                      className={`h-7 w-[112px] rounded-md px-2 text-[10px] font-medium border-0 shadow-none outline-none ${TASK_TYPE_STYLES[note.taskType]}`}
                     >
-                      <SelectTrigger
-                        className={`h-7 w-[112px] px-2 text-[10px] font-medium border-0 shadow-none ${TASK_TYPE_STYLES[note.taskType]}`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="summary" className="text-xs">Summary</SelectItem>
-                        <SelectItem value="explanation" className="text-xs">Explanation</SelectItem>
-                        <SelectItem value="concept" className="text-xs">Key Points</SelectItem>
-                        <SelectItem value="question" className="text-xs">Question</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      <option value="summary">Summary</option>
+                      <option value="explanation">Explanation</option>
+                      <option value="concept">Key Points</option>
+                      <option value="question">Question</option>
+                    </select>
                   </div>
 
                   <div className="flex items-start gap-3">
@@ -444,7 +381,12 @@ export function NotesPanel({
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => onDeleteNote(note.id)}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  onHoverNote?.(null)
+                                  onDeleteNote(note.id)
+                                }}
                                 className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -461,6 +403,33 @@ export function NotesPanel({
           </div>
         )}
       </div>
+
+      {showMindMap && (
+        <div className="fixed inset-0 z-[9999] bg-background">
+          <div className="absolute top-0 left-0 right-0 z-10 flex h-16 items-center justify-between border-b bg-background px-6">
+            <h2 className="text-xl font-semibold">Mind Map Overview</h2>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setShowMindMap(false)}
+              aria-label="Close mind map"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="absolute inset-0 pt-16 flex items-center justify-center overflow-auto bg-background p-6">
+            <Image
+              src="/mindmap-placeholder.png"
+              alt="Mind Map Overview"
+              width={900}
+              height={1600}
+              className="h-[calc(100vh-6rem)] w-auto max-w-[96vw] object-contain"
+              priority
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

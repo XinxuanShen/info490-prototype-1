@@ -29,48 +29,7 @@ interface ToolbarPosition {
 
 type ArticleBlock = { type: string; content: string }
 
-const DEFAULT_CONTENT: ArticleBlock[] = [
-  {
-    type: "heading",
-    content: "The Art of Deep Work"
-  },
-  {
-    type: "paragraph",
-    content: "In an age of constant distraction, the ability to focus deeply on cognitively demanding tasks has become increasingly rare—and increasingly valuable. Deep work, a term coined by computer science professor Cal Newport, refers to professional activities performed in a state of distraction-free concentration that push your cognitive capabilities to their limit."
-  },
-  {
-    type: "paragraph",
-    content: "These efforts create new value, improve your skill, and are hard to replicate. Deep work is like a superpower in our increasingly competitive twenty-first century economy. The ability to quickly master hard things and produce at an elite level, in terms of both quality and speed, are two core abilities for thriving in today's economy."
-  },
-  {
-    type: "subheading",
-    content: "The Science Behind Focus"
-  },
-  {
-    type: "paragraph",
-    content: "Neuroscientific research has shown that when we focus intensely on a task, we trigger a process called myelination. Myelin is a layer of fatty tissue that grows around neurons, acting like insulation around electrical wiring. This allows the neural circuit to fire faster and more accurately. The more we practice a skill in a state of deep concentration, the more myelin develops around the relevant neurons."
-  },
-  {
-    type: "paragraph",
-    content: "This biological reality explains why deliberate practice works: By focusing intensely on a specific skill, you're forcing the relevant circuit to fire, again and again, in isolation. This repetitive use of a specific circuit triggers cells called oligodendrocytes to begin wrapping layers of myelin around the neurons in the circuits—effectively cementing the skill."
-  },
-  {
-    type: "subheading",
-    content: "Strategies for Cultivating Deep Work"
-  },
-  {
-    type: "paragraph",
-    content: "The first strategy is to work deeply by deciding on your depth philosophy. Some people thrive with the monastic philosophy, dedicating extended periods exclusively to deep work. Others prefer the bimodal philosophy, dividing their time between deep work periods and shallow periods. The rhythmic philosophy chains deep work sessions together as a regular habit, while the journalistic philosophy fits deep work wherever possible in a busy schedule."
-  },
-  {
-    type: "paragraph",
-    content: "Another crucial strategy is to embrace boredom. The ability to concentrate intensely is a skill that must be trained. If every moment of potential boredom—waiting in line, riding the subway—is relieved with a quick glance at your smartphone, your brain has likely been rewired to a point where it's not ready for deep work."
-  },
-  {
-    type: "paragraph",
-    content: "Finally, quit social media—or at least be more intentional about it. Social media fragments our attention and trains our minds to crave distraction. By being more selective about our digital tools and adopting a craftsman approach to tool selection, we can reclaim the mental space necessary for deep work."
-  }
-]
+const DEFAULT_CONTENT: ArticleBlock[] = []
 
 function parseTxt(text: string): ArticleBlock[] {
   return text
@@ -85,11 +44,6 @@ function parseTxt(text: string): ArticleBlock[] {
 
 async function parsePdf(file: File): Promise<ArticleBlock[]> {
   const pdfjsLib = await import("pdfjs-dist")
-  // pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  //   "pdfjs-dist/build/pdf.worker.min.mjs",
-  //   import.meta.url
-  // ).toString()
-
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
   const arrayBuffer = await file.arrayBuffer()
@@ -234,7 +188,7 @@ export function ArticlePanel({
   const [selectedText, setSelectedText] = useState<string | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<ToolbarPosition | null>(null)
   const [overlappingNote, setOverlappingNote] = useState<Note | null>(null)
-  const [articleContent, setArticleContent] = useState<ArticleBlock[]>(DEFAULT_CONTENT)
+  const [articleContent, setArticleContent] = useState<ArticleBlock[]>([])
   const [fileName, setFileName] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [parseError, setParseError] = useState<string | null>(null)
@@ -281,7 +235,7 @@ export function ArticlePanel({
         blocks = await parseDocx(file)
       }
 
-      setArticleContent(blocks.length ? blocks : DEFAULT_CONTENT)
+      setArticleContent(blocks)
     } catch (err) {
       console.error("File parse error:", err)
       setParseError("Failed to parse file. Please try another file.")
@@ -294,9 +248,10 @@ export function ArticlePanel({
   }, [])
 
   const handleResetContent = useCallback(() => {
-    setArticleContent(DEFAULT_CONTENT)
+    setArticleContent([])
     setFileName(null)
     setParseError(null)
+    onClearSelections()
   }, [])
 
   const handleMouseUp = useCallback(() => {
@@ -654,10 +609,10 @@ export function ArticlePanel({
               <button
                 onClick={handleResetContent}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                title="Reset to default article"
+                title="Clear uploaded article"
               >
                 <X className="h-3 w-3" />
-                Reset
+                Clear
               </button>
             </>
           )}
